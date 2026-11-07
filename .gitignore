@@ -1,0 +1,44 @@
+# 1. Môi trường & Khóa bảo mật
+.env
+.env.backup
+.env.production
+storage/*.key
+
+# 2. Dependencies
+/vendor
+/node_modules
+/public/hot
+/public/storage
+package-lock.json.backup
+
+# 3. Cache & Logs
+.phpunit.result.cache
+npm-debug.log
+yarn-error.log
+/storage/logs/*.log
+!/storage/logs/.gitkeep
+
+# 4. IDEs
+.idea
+.vscode
+.fleet
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 5. Dữ liệu Media Tạm & Render (Rất nặng, bắt buộc loại trừ)
+/storage/app/temp/*
+/storage/app/temp_render/*
+/storage/app/public/renders/*
+/storage/app/public/products/nobg/*
+/storage/app/public/products/turntable/*
+/storage/app/public/videos/*
+!/storage/app/temp/.gitkeep
+!/storage/app/temp_render/.gitkeep
+!/storage/app/public/renders/.gitkeep
+!/storage/app/public/products/nobg/.gitkeep
+!/storage/app/public/products/turntable/.gitkeep
+!/storage/app/public/videos/.gitkeep
+!/storage/app/sfx_library/.gitkeep
