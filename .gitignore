@@ -3,6 +3,8 @@
 .env.backup
 .env.production
 storage/*.key
+database/*.sqlite
+database/*.sqlite-journal
 
 # 2. Dependencies & Bytecode
 /vendor
