@@ -34,9 +34,9 @@ class GeminiFreeLlmService
     public function __construct()
     {
         $this->apiKey = (string) config('services.gemini.api_key', '');
-        $this->model = (string) config('services.gemini.model', 'gemini-2.5-flash');
+        $this->model = (string) config('services.gemini.model', 'gemini-3.8-flash');
         $this->baseUrl = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models'), '/');
-        $this->timeoutSeconds = max(5, min(25, (int) config('services.gemini.timeout', 12)));
+        $this->timeoutSeconds = max(10, min(90, (int) config('services.gemini.timeout', 45)));
     }
 
     /**
@@ -219,7 +219,9 @@ PROMPT;
 
         $candidateModels = array_values(array_unique([
             $this->model,
-            'gemini-2.5-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.8-flash',
+            'gemini-3.1-flash-lite',
             'gemma-4-31b-it',
         ]));
 
