@@ -337,14 +337,27 @@ class FfmpegVideoCompositorService
         ];
 
         $nextInputIndex = 2;
-        $hasBgm = $bgmTrackPath !== null && $bgmTrackPath !== '' && is_file($bgmTrackPath);
+
+        // Bắt buộc kích hoạt nhạc nền BGM: Nếu $bgmTrackPath trống hoặc không tồn tại, tự động lấy storage/app/sfx_library/ambient_bgm.mp3
+        $resolvedBgmPath = ($bgmTrackPath !== null && trim($bgmTrackPath) !== '' && is_file($bgmTrackPath))
+            ? $bgmTrackPath
+            : storage_path('app/sfx_library/ambient_bgm.mp3');
+
+        if (! is_file($resolvedBgmPath)) {
+            $fallbackBgm = storage_path('app/sfx_library/bgm/ambient_bgm.mp3');
+            if (is_file($fallbackBgm)) {
+                $resolvedBgmPath = $fallbackBgm;
+            }
+        }
+
+        $hasBgm = is_file($resolvedBgmPath);
         $bgmInputIndex = null;
 
         if ($hasBgm) {
             $args[] = '-stream_loop';
             $args[] = '-1';
             $args[] = '-i';
-            $args[] = (string) $bgmTrackPath;
+            $args[] = $resolvedBgmPath;
             $bgmInputIndex = $nextInputIndex++;
         }
 
@@ -370,13 +383,13 @@ class FfmpegVideoCompositorService
                 '[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0dB,apad=whole_dur=%.3f,asplit=2[vo_main][vo_sc]',
                 $videoDurationSec
             );
-            // 2. Luồng nhạc nền BGM (-18dB) + sidechaincompress (Audio Ducking khi có giọng đọc tiếng Việt)
+            // 2. Luồng nhạc nền BGM (-18dB) + sidechaincompress (Audio Ducking tự động hạ âm lượng khi có giọng đọc tiếng Việt)
             $filterParts[] = sprintf(
                 '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,atrim=0:%.3f,asetpts=PTS-STARTPTS,volume=-18dB[bgm_base]',
                 $bgmInputIndex,
                 $videoDurationSec
             );
-            $filterParts[] = '[bgm_base][vo_sc]sidechaincompress=threshold=0.025:ratio=6:attack=45:release=450:makeup=1[bgm_ducked]';
+            $filterParts[] = '[bgm_base][vo_sc]sidechaincompress=threshold=0.08:ratio=4:attack=45:release=400:makeup=2[bgm_ducked]';
         } else {
             $filterParts[] = sprintf(
                 '[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0dB,apad=whole_dur=%.3f[vo_main]',

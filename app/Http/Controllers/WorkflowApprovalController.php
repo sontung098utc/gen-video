@@ -377,9 +377,12 @@ class WorkflowApprovalController extends Controller
             // 1. Nếu câu thoại thay đổi hoặc yêu cầu tạo lại Audio -> chạy đồng bộ Edge-TTS (0$)
             if ($shouldRegenAudio) {
                 $filePrefix = sprintf('project_%d_scene_%02d_regen_%d', $project->id, $scene->scene_order, time());
+                $lockedVoice = $edgeTtsService->resolveVietnameseVoice(
+                    $project->voice_name !== '' ? $project->voice_name : $project->voice_id
+                );
                 $ttsResult = $edgeTtsService->synthesizeSceneVoice(
                     text: $scene->narration_text,
-                    voice: $project->voice_id,
+                    voice: $lockedVoice,
                     filePrefix: $filePrefix,
                     videoProjectId: $project->id,
                     storyboardSceneId: $scene->id

@@ -20,7 +20,10 @@ use Throwable;
 /**
  * BƯỚC 3 (Queue: `ai-orchestration`): Tổng hợp giọng đọc tiếng Việt miễn phí bằng CLI `edge-tts` ($0.00),
  * trích xuất phụ đề `.vtt` kèm mốc thời gian từng từ, đo chính xác thời lượng mili-giây bằng `ffprobe`,
- * và tự động gán file hiệu ứng âm thanh (SFX) từ kho cục bộ `storage/app/sfx_library/` ($0.00).
+ * và tự động gán file hiệu ứng âm thanh (SFX) + nhạc nền (BGM) từ kho cục bộ `storage/app/sfx_library/` ($0.00).
+ *
+ * Đảm bảo khóa cứng duy nhất 1 giọng đọc (`$project->voice_name` / `$project->voice_id`)
+ * xuyên suốt 100% các phân cảnh trong dự án.
  */
 class Step3_GenerateVoiceAndSfxJob implements ShouldQueue
 {
@@ -55,6 +58,11 @@ class Step3_GenerateVoiceAndSfxJob implements ShouldQueue
         try {
             $totalDurationMs = 0;
 
+            // Khóa duy nhất 1 giọng đọc đã chọn từ $project->voice_name (hoặc $project->voice_id) cho toàn bộ các cảnh
+            $lockedVoiceName = $edgeTtsService->resolveVietnameseVoice(
+                $project->voice_name !== '' ? $project->voice_name : $project->voice_id
+            );
+
             /** @var StoryboardScene $scene */
             foreach ($project->scenes as $scene) {
                 if (trim($scene->narration_text) === '') {
@@ -63,20 +71,20 @@ class Step3_GenerateVoiceAndSfxJob implements ShouldQueue
 
                 $filePrefix = sprintf('project_%d_scene_%02d', $project->id, $scene->scene_order);
 
-                // 1. Gọi Edge-TTS tạo file âm thanh .mp3, file phụ đề .vtt và đo thời lượng bằng ffprobe
+                // 1. Gọi Edge-TTS với duy nhất giọng đọc $lockedVoiceName cho mọi phân cảnh
                 $ttsResult = $edgeTtsService->synthesizeSceneVoice(
                     text: $scene->narration_text,
-                    voice: $project->voice_id,
+                    voice: $lockedVoiceName,
                     filePrefix: $filePrefix,
                     videoProjectId: $project->id,
                     storyboardSceneId: $scene->id
                 );
 
-                // 2. Gán hiệu ứng âm thanh (SFX) cục bộ phù hợp với từ khóa sfx_prompt
-                $matchedSfxPath = null;
-                if ($scene->sfx_prompt !== null && trim($scene->sfx_prompt) !== '') {
-                    $matchedSfxPath = $sfxMatcherService->matchSfxForScene($scene->sfx_prompt);
-                }
+                // 2. Gán hiệu ứng âm thanh (SFX) cục bộ phù hợp với từ khóa sfx_prompt (mặc định whoosh/pop)
+                $sfxKeyword = ($scene->sfx_prompt !== null && trim($scene->sfx_prompt) !== '')
+                    ? $scene->sfx_prompt
+                    : 'whoosh';
+                $matchedSfxPath = $sfxMatcherService->matchSfxForScene($sfxKeyword);
 
                 $scene->update([
                     'voice_file_path' => $ttsResult['audio_relative_path'],
@@ -88,13 +96,14 @@ class Step3_GenerateVoiceAndSfxJob implements ShouldQueue
                 $totalDurationMs += $ttsResult['duration_ms'];
             }
 
-            // Tự động gán nhạc nền BGM mặc định nếu dự án chưa có BGM
+            // Tự động gán nhạc nền BGM mặc định (storage/app/sfx_library/ambient_bgm.mp3) nếu dự án chưa có BGM hợp lệ
             $bgmPath = $project->bgm_file_path;
-            if ($bgmPath === null || trim($bgmPath) === '') {
+            if ($bgmPath === null || trim($bgmPath) === '' || ! is_file($bgmPath)) {
                 $bgmPath = $sfxMatcherService->findDefaultBgmTrack();
             }
 
             $project->update([
+                'voice_id' => $lockedVoiceName,
                 'total_duration_ms' => $totalDurationMs,
                 'bgm_file_path' => $bgmPath,
             ]);

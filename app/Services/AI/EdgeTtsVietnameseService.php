@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\AI;
 
 use App\Models\GenerationLog;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -21,9 +20,11 @@ use Throwable;
  *  - Nam: `vi-VN-NamMinhNeural`
  *  - Nữ:  `vi-VN-HoaiMyNeural`
  *
- * Đặc biệt: Tích hợp cơ chế dự phòng tự động (Google Vietnamese TTS + FFmpeg + Auto VTT Generator)
- * nếu dịch vụ WebSocket của Edge-TTS bị gián đoạn hoặc lệch đồng hồ hệ thống (`NoAudioReceived`),
- * đảm bảo bước tạo giọng đọc tiếng Việt luôn thành công 100%.
+ * Quy tắc nhất quán giọng đọc (Voice Consistency):
+ *  - Khóa cứng duy nhất 1 giọng đọc (`$selectedVoice`) đã chọn của dự án xuyên suốt 100% các phân cảnh.
+ *  - Truyền văn bản tiếng Việt qua file tạm chuẩn UTF-8 (`--file`) và tự động thử lại (retry) tối đa 5 lần
+ *    với đúng giọng đọc đó nếu kết nối WebSocket tới Edge-TTS chập chờn.
+ *  - Tuyệt đối không tự ý chuyển đổi sang giọng đọc khác hoặc bộ đọc dự phòng khác giới tính giữa các cảnh.
  */
 class EdgeTtsVietnameseService
 {
@@ -32,8 +33,6 @@ class EdgeTtsVietnameseService
     public const VOICE_FEMALE = 'vi-VN-HoaiMyNeural';
 
     private readonly string $edgeTtsBinary;
-
-    private readonly string $ffmpegBinary;
 
     private readonly string $ffprobeBinary;
 
@@ -46,7 +45,6 @@ class EdgeTtsVietnameseService
     public function __construct()
     {
         $this->edgeTtsBinary = (string) config('services.edge_tts.binary', '/usr/local/bin/edge-tts');
-        $this->ffmpegBinary = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
         $this->ffprobeBinary = (string) config('services.edge_tts.ffprobe_binary', '/usr/local/bin/ffprobe');
         $this->defaultVoice = (string) config('services.edge_tts.default_voice', self::VOICE_MALE);
         $this->defaultRate = (string) config('services.edge_tts.default_rate', '+5%');
@@ -54,8 +52,8 @@ class EdgeTtsVietnameseService
     }
 
     /**
-     * Thực thi lệnh CLI `edge-tts` để xuất file âm thanh `.mp3`, trích xuất phụ đề `.vtt`
-     * kèm word-level timestamps và đo chính xác thời lượng bằng `ffprobe` (mili-giây).
+     * Thực thi lệnh CLI `edge-tts` với duy nhất giọng đọc `$voice` được chỉ định
+     * để xuất file âm thanh `.mp3`, trích xuất phụ đề `.vtt` và đo thời lượng bằng `ffprobe` (mili-giây).
      *
      * @return array{
      *     audio_relative_path: string,
@@ -78,6 +76,7 @@ class EdgeTtsVietnameseService
             throw new RuntimeException('Nội dung câu thoại tiếng Việt không được để trống.');
         }
 
+        // Khóa chính xác giọng đọc được truyền vào (NamMinh hoặc HoaiMy)
         $selectedVoice = $this->resolveVietnameseVoice($voice);
         $baseName = $filePrefix !== null && $filePrefix !== ''
             ? Str::slug($filePrefix, '_')
@@ -90,8 +89,14 @@ class EdgeTtsVietnameseService
         $audioFullPath = $disk->path($audioRelativePath);
         $subtitleFullPath = $disk->path($subtitleRelativePath);
 
+        $tempDir = storage_path('app/temp');
+        $this->ensureDirectoryExists($tempDir);
         $this->ensureDirectoryExists(dirname($audioFullPath));
         $this->ensureDirectoryExists(dirname($subtitleFullPath));
+
+        // Ghi nội dung câu thoại tiếng Việt ra file UTF-8 để tránh lỗi mã hóa ký tự trên CLI Windows/Linux
+        $tempTextPath = "{$tempDir}/{$baseName}_input.txt";
+        file_put_contents($tempTextPath, $cleanText);
 
         $startTime = microtime(true);
 
@@ -101,36 +106,75 @@ class EdgeTtsVietnameseService
             $selectedVoice,
             '--rate=' . $this->defaultRate,
             '--pitch=' . $this->defaultPitch,
-            '--text',
-            $cleanText,
+            '--file',
+            $tempTextPath,
             '--write-media',
             $audioFullPath,
             '--write-subtitles',
             $subtitleFullPath,
         ];
 
-        $usedFallback = false;
+        $maxAttempts = 5;
+        $lastError = '';
+        $synthesized = false;
 
         try {
-            $process = new Process($command);
-            $process->setTimeout(45);
-            $process->run();
+            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+                @unlink($audioFullPath);
+                @unlink($subtitleFullPath);
 
-            if (! $process->isSuccessful() || ! is_file($audioFullPath) || filesize($audioFullPath) === 0) {
-                throw new RuntimeException(trim($process->getErrorOutput() ?: $process->getOutput()));
+                $process = new Process($command);
+                $process->setTimeout(45);
+                $process->run();
+
+                if ($process->isSuccessful() && is_file($audioFullPath) && filesize($audioFullPath) > 256) {
+                    $synthesized = true;
+                    break;
+                }
+
+                $lastError = trim($process->getErrorOutput() ?: $process->getOutput());
+                Log::warning(sprintf(
+                    '[EdgeTtsVietnameseService] Lần thử %d/%d với giọng [%s] chưa thành công: %s',
+                    $attempt,
+                    $maxAttempts,
+                    $selectedVoice,
+                    $lastError
+                ));
+
+                if ($attempt < $maxAttempts) {
+                    usleep(600_000);
+                }
             }
-        } catch (Throwable $edgeException) {
-            Log::warning('[EdgeTtsVietnameseService] Chuyển sang bộ tổng hợp giọng đọc tiếng Việt dự phòng do edge-tts báo: ' . $edgeException->getMessage());
-            $usedFallback = true;
-            $this->synthesizeFallbackVietnameseAudio($cleanText, $audioFullPath);
+        } finally {
+            @unlink($tempTextPath);
+        }
+
+        if (! $synthesized) {
+            $errorMsg = sprintf(
+                'Không thể tổng hợp giọng đọc Edge-TTS [%s] sau %d lần thử: %s',
+                $selectedVoice,
+                $maxAttempts,
+                $lastError
+            );
+
+            $this->recordGenerationLog(
+                videoProjectId: $videoProjectId,
+                storyboardSceneId: $storyboardSceneId,
+                voice: $selectedVoice,
+                status: 'failed',
+                latencyMs: (int) round((microtime(true) - $startTime) * 1000),
+                requestPayload: ['voice' => $selectedVoice, 'text' => $cleanText],
+                responsePayload: null,
+                errorMessage: $errorMsg
+            );
+
+            throw new RuntimeException($errorMsg);
         }
 
         $durationMs = $this->measureAudioDurationMs($audioFullPath);
 
-        // Nếu chạy qua chế độ dự phòng hoặc file .vtt chưa được sinh ra, tự động tạo file phụ đề WebVTT chuẩn theo thời lượng
-        if ($usedFallback || ! is_file($subtitleFullPath) || filesize($subtitleFullPath) === 0) {
-            $this->generateWordLevelVttFromText($cleanText, $durationMs, $subtitleFullPath);
-        }
+        // Đảm bảo file phụ đề luôn ở chuẩn WebVTT (.vtt) có header WEBVTT và mốc thời gian chuẩn
+        $this->normalizeOrGenerateVtt($cleanText, $durationMs, $subtitleFullPath);
 
         $latencyMs = (int) round((microtime(true) - $startTime) * 1000);
 
@@ -152,7 +196,6 @@ class EdgeTtsVietnameseService
             requestPayload: [
                 'voice' => $selectedVoice,
                 'text' => $cleanText,
-                'fallback_used' => $usedFallback,
             ],
             responsePayload: $result,
             errorMessage: null
@@ -200,80 +243,48 @@ class EdgeTtsVietnameseService
     }
 
     /**
-     * Tổng hợp giọng đọc tiếng Việt dự phòng qua Google Translate Vietnamese TTS (`tl=vi`)
-     * hoặc tạo âm thanh giọng đọc bằng FFmpeg nếu mất kết nối mạng.
+     * Kiểm tra và chuẩn hóa mã giọng đọc tiếng Việt hợp lệ.
+     * Bắt buộc trả về đúng giọng đọc đã chọn (`vi-VN-NamMinhNeural` hoặc `vi-VN-HoaiMyNeural`).
      */
-    private function synthesizeFallbackVietnameseAudio(string $text, string $audioFullPath): void
+    public function resolveVietnameseVoice(?string $voice): string
     {
-        try {
-            // Tách câu dài thành các đoạn <= 180 ký tự để gọi Google Translate Vietnamese TTS
-            $words = preg_split('/\s+/u', $text) ?: [];
-            $chunks = [];
-            $current = '';
+        if ($voice === null || trim($voice) === '') {
+            return $this->defaultVoice;
+        }
 
-            foreach ($words as $word) {
-                if (mb_strlen($current . ' ' . $word) > 170 && $current !== '') {
-                    $chunks[] = trim($current);
-                    $current = $word;
-                } else {
-                    $current .= ($current === '' ? '' : ' ') . $word;
+        $trimmed = trim($voice);
+
+        if ($trimmed === self::VOICE_FEMALE || stripos($trimmed, 'HoaiMy') !== false) {
+            return self::VOICE_FEMALE;
+        }
+
+        if ($trimmed === self::VOICE_MALE || stripos($trimmed, 'NamMinh') !== false) {
+            return self::VOICE_MALE;
+        }
+
+        return $this->defaultVoice;
+    }
+
+    /**
+     * Chuẩn hóa file phụ đề do `edge-tts` xuất ra (có thể ở dạng SRT) sang chuẩn WebVTT (`.vtt`),
+     * hoặc tự động chia cụm từ theo `$durationMs` nếu file phụ đề trống.
+     */
+    private function normalizeOrGenerateVtt(string $text, int $durationMs, string $vttFullPath): void
+    {
+        if (is_file($vttFullPath) && filesize($vttFullPath) > 0) {
+            $rawContent = (string) file_get_contents($vttFullPath);
+            if (trim($rawContent) !== '') {
+                // Nếu edge-tts v7 xuất định dạng SRT (dùng dấu phẩy cho mili-giây), chuyển sang chuẩn WebVTT
+                if (! str_starts_with(ltrim($rawContent), 'WEBVTT')) {
+                    $vttContent = preg_replace('/(\d{2}:\d{2}:\d{2}),(\d{3})/', '$1.$2', $rawContent) ?? $rawContent;
+                    file_put_contents($vttFullPath, "WEBVTT\n\n" . ltrim($vttContent));
                 }
-            }
-            if (trim($current) !== '') {
-                $chunks[] = trim($current);
-            }
-
-            $mp3Bytes = '';
-            foreach ($chunks as $chunk) {
-                $url = 'https://translate.google.com/translate_tts?' . http_build_query([
-                    'ie' => 'UTF-8',
-                    'tl' => 'vi',
-                    'client' => 'tw-ob',
-                    'q' => $chunk,
-                ]);
-
-                $response = Http::timeout(12)
-                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
-                    ->withHeaders([
-                        'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                    ])
-                    ->get($url);
-
-                if ($response->successful() && strlen($response->body()) > 256) {
-                    $mp3Bytes .= $response->body();
-                }
-            }
-
-            if (strlen($mp3Bytes) > 256) {
-                file_put_contents($audioFullPath, $mp3Bytes);
 
                 return;
             }
-        } catch (Throwable) {
-            // Chuyển tiếp xuống FFmpeg fallback nếu không có mạng
         }
 
-        // Dự phòng cuối cùng bằng FFmpeg lavfi nếu hoàn toàn offline
-        $wordCount = max(5, count(preg_split('/\s+/u', $text) ?: []));
-        $durationSec = max(3.5, round($wordCount * 0.32, 2));
-
-        $process = new Process([
-            $this->ffmpegBinary,
-            '-y',
-            '-f',
-            'lavfi',
-            '-i',
-            "sine=frequency=320:duration={$durationSec}",
-            '-af',
-            'volume=0.08',
-            '-c:a',
-            'libmp3lame',
-            '-q:a',
-            '4',
-            $audioFullPath,
-        ]);
-        $process->setTimeout(30);
-        $process->run();
+        $this->generateWordLevelVttFromText($text, $durationMs, $vttFullPath);
     }
 
     /**
@@ -290,7 +301,6 @@ class EdgeTtsVietnameseService
             return;
         }
 
-        // Chia thành các cụm 5-7 từ mỗi cue để hiển thị Karaoke trên màn hình dọc 9:16 đẹp nhất
         $phrases = array_chunk($words, 6);
         $phraseCount = count($phrases);
         $msPerPhrase = (int) floor($durationMs / $phraseCount);
@@ -330,23 +340,6 @@ class EdgeTtsVietnameseService
         $hours = intdiv($totalMin, 60);
 
         return sprintf('%02d:%02d:%02d.%03d', $hours, $min, $sec, $millis);
-    }
-
-    /**
-     * Kiểm tra và chuẩn hóa mã giọng đọc tiếng Việt hợp lệ.
-     */
-    private function resolveVietnameseVoice(?string $voice): string
-    {
-        $allowedVoices = [
-            self::VOICE_MALE,
-            self::VOICE_FEMALE,
-        ];
-
-        if ($voice !== null && in_array($voice, $allowedVoices, true)) {
-            return $voice;
-        }
-
-        return $this->defaultVoice;
     }
 
     /**

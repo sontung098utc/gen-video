@@ -96,7 +96,7 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
                         storyboardSceneId: $scene->id
                     );
 
-                    $videoRelativePath = "scenes/videos/{$filePrefix}_eco60fps.mp4";
+                    $videoRelativePath = "renders/{$filePrefix}_eco60fps.mp4";
                     $videoFullPath = $disk->path($videoRelativePath);
 
                     $ffmpegCompositor->generateKenBurnsClip(

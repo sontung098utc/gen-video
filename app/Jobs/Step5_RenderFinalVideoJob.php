@@ -85,10 +85,19 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
                 $transitionTypes[] = $scene->transition_type ?: 'fade';
                 $voiceFilePaths[] = $disk->path($scene->voice_file_path);
 
-                // Định vị hiệu ứng âm thanh SFX tại đầu mỗi phân cảnh
-                if ($scene->sfx_file_path !== null && is_file($scene->sfx_file_path)) {
+                // Định vị hiệu ứng âm thanh SFX (-6dB) tại điểm bắt đầu / chuyển cảnh của mỗi phân cảnh
+                $sfxFilePath = $scene->sfx_file_path;
+                if ($sfxFilePath === null || ! is_file($sfxFilePath)) {
+                    $defaultSfxName = ($scene->scene_order % 2 === 0) ? 'pop.mp3' : 'whoosh.mp3';
+                    $candidateSfx = storage_path("app/sfx_library/{$defaultSfxName}");
+                    if (is_file($candidateSfx)) {
+                        $sfxFilePath = $candidateSfx;
+                    }
+                }
+
+                if ($sfxFilePath !== null && is_file($sfxFilePath)) {
                     $sfxTimeline[] = [
-                        'file_path' => $scene->sfx_file_path,
+                        'file_path' => $sfxFilePath,
                         'start_ms' => $runningOffsetMs,
                     ];
                 }
@@ -139,12 +148,17 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
             $concatenatedVoicePath = "{$buildDir}/full_voiceover.mp3";
             $ffmpegCompositor->concatenateVoiceTracks($voiceFilePaths, $concatenatedVoicePath);
 
+            $bgmTrackPath = $project->bgm_file_path;
+            if ($bgmTrackPath === null || trim($bgmTrackPath) === '' || ! is_file($bgmTrackPath)) {
+                $bgmTrackPath = storage_path('app/sfx_library/ambient_bgm.mp3');
+            }
+
             $mixedAudioVideoPath = "{$buildDir}/mixed_audio_video.mp4";
             $ffmpegCompositor->mixAudioLayers(
                 videoPath: $stitchedVideoPath,
                 voiceTrackPath: $concatenatedVoicePath,
                 sfxTimeline: $sfxTimeline,
-                bgmTrackPath: $project->bgm_file_path,
+                bgmTrackPath: $bgmTrackPath,
                 finalOutputPath: $mixedAudioVideoPath
             );
 

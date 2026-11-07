@@ -105,14 +105,39 @@ class LocalSfxMatcherService
             }
         }
 
-        return $bestScore > 0 ? $bestPath : null;
+        if ($bestScore > 0 && $bestPath !== null) {
+            return $bestPath;
+        }
+
+        // Mặc định trả về whoosh.mp3 hoặc pop.mp3 trong kho sfx_library để luôn có hiệu ứng chuyển cảnh
+        $defaultWhoosh = $this->sfxLibraryRoot . DIRECTORY_SEPARATOR . 'whoosh.mp3';
+        if (is_file($defaultWhoosh)) {
+            return $defaultWhoosh;
+        }
+
+        $defaultPop = $this->sfxLibraryRoot . DIRECTORY_SEPARATOR . 'pop.mp3';
+        if (is_file($defaultPop)) {
+            return $defaultPop;
+        }
+
+        return $availableFiles[0] ?? null;
     }
 
     /**
-     * Tìm file nhạc nền (BGM) mặc định trong `storage/app/sfx_library/bgm` nếu dự án chưa gán BGM.
+     * Tìm file nhạc nền (BGM) mặc định (`storage/app/sfx_library/ambient_bgm.mp3`) nếu dự án chưa gán BGM.
      */
     public function findDefaultBgmTrack(?string $moodKeyword = null): ?string
     {
+        $primaryBgm = $this->sfxLibraryRoot . DIRECTORY_SEPARATOR . 'ambient_bgm.mp3';
+        if (is_file($primaryBgm)) {
+            return $primaryBgm;
+        }
+
+        $bgmSubdirFile = $this->sfxLibraryRoot . DIRECTORY_SEPARATOR . 'bgm' . DIRECTORY_SEPARATOR . 'ambient_bgm.mp3';
+        if (is_file($bgmSubdirFile)) {
+            return $bgmSubdirFile;
+        }
+
         $bgmDir = $this->sfxLibraryRoot . DIRECTORY_SEPARATOR . 'bgm';
         $searchDir = is_dir($bgmDir) ? $bgmDir : $this->sfxLibraryRoot;
 

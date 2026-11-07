@@ -69,6 +69,7 @@
         <input type="hidden" name="cost_tier_mode" :value="costTierMode">
         <input type="hidden" name="workflow_mode" :value="workflowMode">
         <input type="hidden" name="voice_id" :value="voiceId">
+        <input type="hidden" name="voice_name" :value="voiceId">
 
         <!-- Khung Nội Dung Theo Tab -->
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">

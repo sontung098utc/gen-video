@@ -27,6 +27,7 @@ use Illuminate\Support\Str;
  * @property WorkflowMode $workflow_mode
  * @property CostTierMode $cost_tier_mode
  * @property string $voice_id
+ * @property string $voice_name
  * @property string|null $master_style_prompt
  * @property string|null $bgm_file_path
  * @property string|null $final_video_path
@@ -50,6 +51,7 @@ class VideoProject extends Model
         'workflow_mode',
         'cost_tier_mode',
         'voice_id',
+        'voice_name',
         'master_style_prompt',
         'bgm_file_path',
         'final_video_path',
@@ -126,6 +128,22 @@ class VideoProject extends Model
         }
 
         return $next;
+    }
+
+    /**
+     * Lấy mã giọng đọc chuẩn (đồng bộ giữa `voice_name` và `voice_id` để khóa duy nhất 1 giọng xuyên suốt dự án).
+     */
+    public function getVoiceNameAttribute(): string
+    {
+        return (string) ($this->attributes['voice_id'] ?? 'vi-VN-NamMinhNeural');
+    }
+
+    /**
+     * Gán mã giọng đọc chuẩn vào cột `voice_id` khi truyền `voice_name`.
+     */
+    public function setVoiceNameAttribute(string $value): void
+    {
+        $this->attributes['voice_id'] = $value;
     }
 
     /**

@@ -87,7 +87,8 @@ class ProjectWebController extends Controller
             'aspect_ratio' => ['required', 'string', 'in:9:16,16:9'],
             'cost_tier_mode' => ['required', 'string', 'in:eco_mode,full_ai_video_mode'],
             'workflow_mode' => ['required', 'string', 'in:step_by_step,auto'],
-            'voice_id' => ['required', 'string', 'in:vi-VN-NamMinhNeural,vi-VN-HoaiMyNeural'],
+            'voice_id' => ['nullable', 'string', 'in:vi-VN-NamMinhNeural,vi-VN-HoaiMyNeural'],
+            'voice_name' => ['nullable', 'string', 'in:vi-VN-NamMinhNeural,vi-VN-HoaiMyNeural'],
 
             // Các trường dành riêng cho Tab 2: Video Sản Phẩm 3D
             'product_name' => ['required_if:project_type,product', 'nullable', 'string', 'max:255'],
@@ -103,6 +104,8 @@ class ProjectWebController extends Controller
         $projectType = ProjectType::from($validated['project_type']);
 
         $project = DB::transaction(function () use ($request, $validated, $projectType): VideoProject {
+            $selectedVoice = (string) ($validated['voice_name'] ?? $validated['voice_id'] ?? 'vi-VN-NamMinhNeural');
+
             $project = VideoProject::query()->create([
                 'title' => $validated['title'],
                 'project_type' => $projectType,
@@ -111,7 +114,8 @@ class ProjectWebController extends Controller
                 'status' => ProjectStatus::DRAFT,
                 'workflow_mode' => WorkflowMode::from($validated['workflow_mode']),
                 'cost_tier_mode' => CostTierMode::from($validated['cost_tier_mode']),
-                'voice_id' => $validated['voice_id'],
+                'voice_id' => $selectedVoice,
+                'bgm_file_path' => storage_path('app/sfx_library/ambient_bgm.mp3'),
             ]);
 
             if ($projectType === ProjectType::PRODUCT) {
@@ -350,6 +354,7 @@ class ProjectWebController extends Controller
                 'cost_tier_mode' => $project->cost_tier_mode->value,
                 'cost_tier_label' => $project->cost_tier_mode->label(),
                 'voice_id' => $project->voice_id,
+                'voice_name' => $project->voice_name,
                 'master_style_prompt' => $project->master_style_prompt ?? '',
                 'bgm_file_path' => $project->bgm_file_path,
                 'final_video_url' => $project->final_video_path ? asset('storage/' . $project->final_video_path) : null,

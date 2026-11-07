@@ -51,23 +51,38 @@ mkdir -p storage/logs/pm2
 
 "${PHP_BIN}" artisan storage:link --force >/dev/null 2>&1 || true
 
-# Tạo tự động các file âm thanh SFX & BGM mẫu bằng FFmpeg lavfi nếu kho đang trống
+# Tạo tự động các file âm thanh SFX & BGM chuẩn (ambient_bgm.mp3, whoosh.mp3, pop.mp3) bằng FFmpeg lavfi nếu kho đang trống
 FFMPEG_BIN="/usr/local/bin/ffmpeg"
+if [[ ! -x "${FFMPEG_BIN}" ]]; then
+    FFMPEG_BIN="$(command -v ffmpeg || echo '/usr/local/bin/ffmpeg')"
+fi
+
 if [[ -x "${FFMPEG_BIN}" ]]; then
-    if [[ ! -f "storage/app/sfx_library/transitions/whoosh_fast.mp3" ]]; then
-        log_info "Đang khởi tạo các file âm thanh Local SFX & BGM mẫu (0$) bằng FFmpeg..."
-        nice -n 10 "${FFMPEG_BIN}" -y -threads 2 -f lavfi -i "anoisesrc=d=0.45:c=pink:r=44100:a=0.35" \
-            -af "afade=t=in:ss=0:d=0.15,afade=t=out:st=0.20:d=0.25" \
-            storage/app/sfx_library/transitions/whoosh_fast.mp3 >/dev/null 2>&1 || true
+    if [[ ! -f "storage/app/sfx_library/ambient_bgm.mp3" || ! -f "storage/app/sfx_library/whoosh.mp3" || ! -f "storage/app/sfx_library/pop.mp3" ]]; then
+        log_info "Đang khởi tạo các file âm thanh Local SFX & BGM (ambient_bgm.mp3, whoosh.mp3, pop.mp3) bằng FFmpeg..."
 
-        nice -n 10 "${FFMPEG_BIN}" -y -threads 2 -f lavfi -i "sine=frequency=1200:duration=0.35" \
-            -af "afade=t=out:st=0.05:d=0.30,volume=0.3" \
-            storage/app/sfx_library/impacts/sparkle_chime.mp3 >/dev/null 2>&1 || true
+        # 1. Nhạc nền nhẹ ambient_bgm.mp3 (hợp âm Ambient Pad ấm áp, rõ ràng, 30 giây, Stereo 44.1kHz)
+        nice -n 10 "${FFMPEG_BIN}" -y -threads 2 -f lavfi \
+            -i "aevalsrc='0.28*sin(2*PI*220*t)+0.22*sin(2*PI*277.18*t)+0.25*sin(2*PI*329.63*t)+0.18*sin(2*PI*440*t)*(0.6+0.4*sin(2*PI*0.25*t))':s=44100:d=30" \
+            -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,afade=t=in:ss=0:d=1.5,afade=t=out:st=28.5:d=1.5,volume=0.85" \
+            -c:a libmp3lame -b:a 192k storage/app/sfx_library/ambient_bgm.mp3 >/dev/null 2>&1 || true
+        cp -f storage/app/sfx_library/ambient_bgm.mp3 storage/app/sfx_library/bgm/ambient_bgm.mp3 2>/dev/null || true
 
-        nice -n 10 "${FFMPEG_BIN}" -y -threads 2 -f lavfi -i "sine=frequency=220:duration=15" \
-            -af "volume=0.15" \
-            storage/app/sfx_library/bgm/ambient_inspiring_bgm.mp3 >/dev/null 2>&1 || true
-        log_ok "Đã tạo sẵn kho Local SFX/BGM mẫu tại storage/app/sfx_library/."
+        # 2. Tiếng động chuyển cảnh whoosh.mp3 (hiệu ứng lướt gió chuyển cảnh sắc nét, 0.55 giây)
+        nice -n 10 "${FFMPEG_BIN}" -y -threads 2 -f lavfi \
+            -i "anoisesrc=d=0.55:c=pink:r=44100:a=0.9" \
+            -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,bandpass=f=900:width_type=h:w=1400,afade=t=in:ss=0:d=0.18,afade=t=out:st=0.22:d=0.33,volume=0.95" \
+            -c:a libmp3lame -b:a 192k storage/app/sfx_library/whoosh.mp3 >/dev/null 2>&1 || true
+        cp -f storage/app/sfx_library/whoosh.mp3 storage/app/sfx_library/transitions/whoosh.mp3 2>/dev/null || true
+
+        # 3. Tiếng động điểm nhấn pop.mp3 (hiệu ứng Pop/Chime hiện đại, 0.35 giây)
+        nice -n 10 "${FFMPEG_BIN}" -y -threads 2 -f lavfi \
+            -i "aevalsrc='0.6*sin(2*PI*(520+680*t)*t)*exp(-9*t)+0.35*sin(2*PI*1046.5*t)*exp(-12*t)':s=44100:d=0.35" \
+            -af "aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,afade=t=out:st=0.15:d=0.20,volume=0.95" \
+            -c:a libmp3lame -b:a 192k storage/app/sfx_library/pop.mp3 >/dev/null 2>&1 || true
+        cp -f storage/app/sfx_library/pop.mp3 storage/app/sfx_library/impacts/pop.mp3 2>/dev/null || true
+
+        log_ok "Đã tạo sẵn ambient_bgm.mp3, whoosh.mp3 và pop.mp3 tại storage/app/sfx_library/."
     fi
 fi
 
