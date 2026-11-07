@@ -78,30 +78,36 @@ class FfmpegVideoCompositorService
         $totalFrames = max(60, (int) ceil($durationSeconds * $fps));
         $resolution = $aspectRatio === '16:9' ? '1920x1080' : '1080x1920';
 
-        // Công thức zoompan 60fps: Upscale chiều rộng lên 4320px trước khi zoompan để loại bỏ hiện tượng rung pixel
+        $upscaleWidth = PHP_OS_FAMILY === 'Linux' ? 4320 : 2160;
+
+        // Công thức zoompan 60fps: Upscale chiều rộng trước khi zoompan để loại bỏ hiện tượng rung pixel
         $zoompanExpr = match ($cameraMotion) {
             'zoom_out' => sprintf(
-                "scale=4320:-1,zoompan=z='if(eq(on,1),1.25,max(1.0,zoom-0.0005))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                "scale=%d:-1,zoompan=z='if(eq(on,1),1.25,max(1.0,zoom-0.0005))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                $upscaleWidth,
                 $totalFrames,
                 $resolution,
                 $fps
             ),
             'pan_right' => sprintf(
-                "scale=4320:-1,zoompan=z='1.16':x='(iw-iw/zoom)*(on/%d)':y='(ih-ih/zoom)/2':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                "scale=%d:-1,zoompan=z='1.16':x='(iw-iw/zoom)*(on/%d)':y='(ih-ih/zoom)/2':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                $upscaleWidth,
                 $totalFrames,
                 $totalFrames,
                 $resolution,
                 $fps
             ),
             'pan_left' => sprintf(
-                "scale=4320:-1,zoompan=z='1.16':x='(iw-iw/zoom)*(1-on/%d)':y='(ih-ih/zoom)/2':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                "scale=%d:-1,zoompan=z='1.16':x='(iw-iw/zoom)*(1-on/%d)':y='(ih-ih/zoom)/2':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                $upscaleWidth,
                 $totalFrames,
                 $totalFrames,
                 $resolution,
                 $fps
             ),
             default => sprintf(
-                "scale=4320:-1,zoompan=z='min(zoom+0.0005,1.25)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                "scale=%d:-1,zoompan=z='min(zoom+0.0005,1.25)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=%d:s=%s:fps=%d,setsar=1,format=yuv420p",
+                $upscaleWidth,
                 $totalFrames,
                 $resolution,
                 $fps
@@ -458,8 +464,14 @@ class FfmpegVideoCompositorService
 
         $this->ensureParentDirectory($finalOutputPath);
 
-        // Escape đường dẫn file phụ đề theo chuẩn filter FFmpeg (xử lý cả dấu : và \ nếu có)
-        $escapedAssPath = str_replace(['\\', ':'], ['/', '\\:'], $assSubtitlePath);
+        // Chuyển sang đường dẫn tương đối (không chứa dấu ':' ổ đĩa Windows) nếu nằm trong thư mục dự án
+        $normalizedBase = rtrim(str_replace('\\', '/', base_path()), '/') . '/';
+        $normalizedAss = str_replace('\\', '/', $assSubtitlePath);
+        if (str_starts_with($normalizedAss, $normalizedBase)) {
+            $escapedAssPath = substr($normalizedAss, strlen($normalizedBase));
+        } else {
+            $escapedAssPath = str_replace(':', '\\:', $normalizedAss);
+        }
 
         $args = [
             '-y',
@@ -587,6 +599,7 @@ class FfmpegVideoCompositorService
      */
     private function runFfmpegProcess(array $ffmpegArguments, int $timeoutSeconds = 600): void
     {
+        @set_time_limit(0);
         // Trên môi trường Linux/CentOS 8, luôn bọc tiền tố `nice -n 10` trước binary ffmpeg
         if (PHP_OS_FAMILY === 'Linux') {
             $command = array_merge(

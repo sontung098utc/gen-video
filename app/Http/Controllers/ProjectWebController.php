@@ -166,11 +166,16 @@ class ProjectWebController extends Controller
         });
 
         // Kích hoạt bước đầu tiên thông qua State Machine Orchestrator
-        $this->orchestrator->dispatchNextStep($project);
+        try {
+            $this->orchestrator->dispatchNextStep($project);
+        } catch (\Throwable $e) {
+            // Đảm bảo luôn điều hướng về màn hình Studio thay vì trang lỗi 500 khi chạy QUEUE_CONNECTION=sync
+            $this->orchestrator->markAsFailed($project, $e->getMessage());
+        }
 
         return redirect()
             ->route('projects.studio', ['id' => $project->id])
-            ->with('success', 'Dự án đã được khởi tạo và đẩy vào hàng đợi xử lý PM2!');
+            ->with('success', 'Dự án đã được khởi tạo thành công!');
     }
 
     /**
