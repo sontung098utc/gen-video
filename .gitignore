@@ -21,6 +21,12 @@ npm-debug.log
 yarn-error.log
 /storage/logs/*.log
 !/storage/logs/.gitkeep
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitkeep
+/storage/framework/views/*
+!/storage/framework/views/.gitkeep
+/storage/framework/cache/data/*
+!/storage/framework/cache/data/.gitkeep
 
 # 4. IDEs
 .idea
@@ -39,6 +45,9 @@ yarn-error.log
 /storage/app/public/products/nobg/*
 /storage/app/public/products/turntable/*
 /storage/app/public/videos/*
+/storage/app/public/audio/*
+/storage/app/public/scenes/*
+/storage/app/public/subtitles/*
 !/storage/app/temp/.gitkeep
 !/storage/app/temp_render/.gitkeep
 !/storage/app/public/renders/.gitkeep
