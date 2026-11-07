@@ -4,12 +4,14 @@
 .env.production
 storage/*.key
 
-# 2. Dependencies
+# 2. Dependencies & Bytecode
 /vendor
 /node_modules
 /public/hot
 /public/storage
 package-lock.json.backup
+__pycache__/
+*.py[cod]
 
 # 3. Cache & Logs
 .phpunit.result.cache
