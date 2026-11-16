@@ -85,7 +85,7 @@ class ProjectWebController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'topic_or_brief' => ['nullable', 'string', 'max:5000'],
             'remake_instructions' => ['nullable', 'string', 'max:5000'],
-            'reference_video' => ['required_if:project_type,clone_reference', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:51200'],
+            'reference_video' => ['required_if:project_type,clone_reference', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:102400'],
             'aspect_ratio' => ['required', 'string', 'in:9:16,16:9'],
             'cost_tier_mode' => ['required', 'string', 'in:eco_mode,full_ai_video_mode'],
             'render_engine' => ['nullable', 'string', 'in:ai_fal,motion_graphics'],
