@@ -194,6 +194,169 @@ PROMPT;
     }
 
     /**
+     * Phân tích đa phương thức Video mẫu (.mp4/.mov/.webm) bằng cách trích xuất các khung hình tiêu biểu qua FFmpeg
+     * và dùng Gemini Multimodal để clone cấu trúc viral, nhịp cắt, góc máy & viết lại kịch bản tiếng Việt mới.
+     *
+     * @return array<string, mixed>
+     */
+    public function analyzeReferenceVideo(
+        string $videoPath,
+        string $remakeInstructions = '',
+        ?int $videoProjectId = null
+    ): array {
+        $systemPrompt = <<<'PROMPT'
+Bạn là Đạo diễn Clone Video Viral (lấy cảm hứng từ Hypit SVML) trên TikTok / Reels / YouTube Shorts.
+Dựa trên các khung hình trích xuất theo trình tự thời gian từ Video mẫu và yêu cầu làm lại (nếu có), hãy:
+1. Giải mã cấu trúc viral của video mẫu (Hook 3 giây đầu, nhịp độ, góc máy, bố cục chữ/đồ họa, chuyển cảnh).
+2. Tái tạo thành kịch bản video mới hoàn chỉnh bằng tiếng Việt (4-6 phân cảnh), giữ nguyên nhịp hấp dẫn của bản gốc nhưng áp dụng đúng chủ đề/sản phẩm người dùng yêu cầu.
+3. Trong `tagged_narration` và `narration_text`, chèn các thẻ neo từ khóa (`@{pop}`, `@{whoosh}`, `@{sparkle}`, `@{zoom}`, `@{sticker}`) ngay trước từ cần nhấn mạnh.
+4. Mỗi phân cảnh có `prompt_kit` tách lớp (`subject_anchor`, `shot_composition`, `lighting_setting`) để giữ đồng nhất phong cách.
+
+YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG JSON TRẢ VỀ:
+{
+  "title": "Tiêu đề video mới hấp dẫn bằng tiếng Việt",
+  "master_style_prompt": "Mô tả phong cách thị giác tổng thể bằng tiếng Anh dựa trên video mẫu",
+  "recommended_bgm_mood": "upbeat_modern",
+  "scenes": [
+    {
+      "scene_order": 1,
+      "narration_text": "Lời thoại tiếng Việt (có thể kèm thẻ @{pop}, @{whoosh} trước từ khóa)",
+      "tagged_narration": "Lời thoại tiếng Việt kèm thẻ @{pop}, @{whoosh}",
+      "prompt_kit": {
+        "subject_anchor": "Mô tả chủ thể chính",
+        "shot_composition": "Bố cục & góc máy tương ứng video mẫu",
+        "lighting_setting": "Ánh sáng & bối cảnh"
+      },
+      "visual_prompt": "Prompt tiếng Anh đầy đủ ghép từ prompt_kit",
+      "sfx_prompt": "whoosh_fast",
+      "camera_motion": "zoom_in | zoom_out | pan_right | pan_left",
+      "transition_type": "fade | smoothleft | wipeleft | circleopen | dissolve"
+    }
+  ]
+}
+PROMPT;
+
+        $instructions = trim($remakeInstructions) !== ''
+            ? trim($remakeInstructions)
+            : 'Giữ nguyên cấu trúc Hook, nhịp chuyển cảnh và phong cách thị giác của video mẫu, chuyển thể lời thoại tiếng Việt tự nhiên và cuốn hút.';
+
+        $parts = [[
+            'text' => sprintf("YÊU CẦU LÀM LẠI VIDEO MẪU:\n\"%s\"\nHãy phân tích các khung hình đính kèm và xuất JSON.", $instructions),
+        ]];
+
+        // Trích xuất tối đa 5 khung hình đại diện từ video mẫu bằng FFmpeg (-threads 6)
+        $extractedFrames = $this->extractReferenceVideoFrames($videoPath, 5);
+        foreach ($extractedFrames as $framePath) {
+            $rawBytes = @file_get_contents($framePath);
+            if ($rawBytes !== false && $rawBytes !== '') {
+                $parts[] = [
+                    'inline_data' => [
+                        'mime_type' => 'image/jpeg',
+                        'data' => base64_encode($rawBytes),
+                    ],
+                ];
+            }
+            @unlink($framePath);
+        }
+
+        try {
+            $result = $this->callGeminiJsonEndpoint(
+                systemPrompt: $systemPrompt,
+                userParts: $parts,
+                actionType: 'analyze_reference_video',
+                videoProjectId: $videoProjectId,
+                sanitizedRequestMeta: [
+                    'video_file' => basename($videoPath),
+                    'remake_instructions' => $instructions,
+                    'frames_extracted' => count($extractedFrames),
+                ]
+            );
+
+            return $this->normalizeScenePromptKits($result);
+        } catch (Throwable $e) {
+            Log::warning('[GeminiFreeLlmService] Chuyển sang Smart Local Fallback cho analyzeReferenceVideo: ' . $e->getMessage());
+
+            return $this->buildFallbackKnowledgeScript($instructions, $videoProjectId, $e->getMessage());
+        }
+    }
+
+    /**
+     * Trích xuất các khung hình JPEG đại diện từ video mẫu bằng FFmpeg (giới hạn luồng -threads 6).
+     *
+     * @return array<int, string>
+     */
+    private function extractReferenceVideoFrames(string $videoPath, int $maxFrames = 5): array
+    {
+        if (! is_file($videoPath)) {
+            return [];
+        }
+
+        $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
+        $ffprobeBin = (string) config('services.ffmpeg.ffprobe_binary', '/usr/local/bin/ffprobe');
+        $maxThreads = max(1, min(6, (int) config('services.ffmpeg.max_threads', 6)));
+
+        $durationSec = 10.0;
+        $probeProc = new \Symfony\Component\Process\Process([
+            $ffprobeBin,
+            '-v',
+            'error',
+            '-show_entries',
+            'format=duration',
+            '-of',
+            'default=noprint_wrappers=1:nokey=1',
+            $videoPath,
+        ]);
+        $probeProc->setTimeout(15);
+        $probeProc->run();
+        if ($probeProc->isSuccessful()) {
+            $parsed = (float) trim($probeProc->getOutput());
+            if ($parsed > 0.5) {
+                $durationSec = $parsed;
+            }
+        }
+
+        $tempDir = storage_path('app/temp/ref_frames_' . uniqid());
+        if (! is_dir($tempDir)) {
+            mkdir($tempDir, 0775, true);
+        }
+
+        $frames = [];
+        for ($i = 0; $i < $maxFrames; $i++) {
+            $timestamp = round(($durationSec * ($i + 0.5)) / $maxFrames, 2);
+            $outPath = "{$tempDir}/frame_{$i}.jpg";
+            $args = [
+                '-y',
+                '-threads',
+                (string) $maxThreads,
+                '-ss',
+                (string) $timestamp,
+                '-i',
+                $videoPath,
+                '-frames:v',
+                '1',
+                '-vf',
+                'scale=640:-1',
+                '-q:v',
+                '4',
+                $outPath,
+            ];
+            $cmd = PHP_OS_FAMILY === 'Linux'
+                ? array_merge(['nice', '-n', '10', $ffmpegBin], $args)
+                : array_merge([$ffmpegBin], $args);
+
+            $proc = new \Symfony\Component\Process\Process($cmd);
+            $proc->setTimeout(20);
+            $proc->run();
+
+            if (is_file($outPath) && filesize($outPath) > 0) {
+                $frames[] = $outPath;
+            }
+        }
+
+        return $frames;
+    }
+
+    /**
      * Thực thi HTTP POST tới Google Gemini API với danh sách model ưu tiên.
      *
      * @param  array<int, array<string, mixed>>  $userParts

@@ -81,9 +81,11 @@ class ProjectWebController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'project_type' => ['required', 'string', 'in:knowledge,product'],
+            'project_type' => ['required', 'string', 'in:knowledge,product,clone_reference'],
             'title' => ['required', 'string', 'max:255'],
             'topic_or_brief' => ['nullable', 'string', 'max:5000'],
+            'remake_instructions' => ['nullable', 'string', 'max:5000'],
+            'reference_video' => ['required_if:project_type,clone_reference', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:51200'],
             'aspect_ratio' => ['required', 'string', 'in:9:16,16:9'],
             'cost_tier_mode' => ['required', 'string', 'in:eco_mode,full_ai_video_mode'],
             'render_engine' => ['nullable', 'string', 'in:ai_fal,motion_graphics'],
@@ -104,9 +106,10 @@ class ProjectWebController extends Controller
             'product_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:15360'],
         ]);
 
-        $projectType = ProjectType::from($validated['project_type']);
+        $isCloneReference = $validated['project_type'] === 'clone_reference';
+        $projectType = $isCloneReference ? ProjectType::KNOWLEDGE : ProjectType::from($validated['project_type']);
 
-        $project = DB::transaction(function () use ($request, $validated, $projectType): VideoProject {
+        $project = DB::transaction(function () use ($request, $validated, $projectType, $isCloneReference): VideoProject {
             $selectedVoice = (string) ($validated['voice_name'] ?? $validated['voice_id'] ?? 'vi-VN-NamMinhNeural');
             $styleTags = [];
             if (($validated['render_engine'] ?? 'ai_fal') === 'motion_graphics') {
@@ -121,10 +124,14 @@ class ProjectWebController extends Controller
                 $styleTags[] = '[subtitle:karaoke_box]';
             }
 
+            $topicOrBrief = $isCloneReference
+                ? (string) ($validated['remake_instructions'] ?? $validated['title'])
+                : (string) ($validated['topic_or_brief'] ?? ($validated['product_description'] ?? ''));
+
             $project = VideoProject::query()->create([
                 'title' => $validated['title'],
                 'project_type' => $projectType,
-                'topic_or_brief' => $validated['topic_or_brief'] ?? ($validated['product_description'] ?? ''),
+                'topic_or_brief' => $topicOrBrief,
                 'aspect_ratio' => $validated['aspect_ratio'],
                 'status' => ProjectStatus::DRAFT,
                 'workflow_mode' => WorkflowMode::from($validated['workflow_mode']),
@@ -133,6 +140,19 @@ class ProjectWebController extends Controller
                 'master_style_prompt' => $styleTags !== [] ? implode(' ', $styleTags) : null,
                 'bgm_file_path' => storage_path('app/sfx_library/ambient_bgm.mp3'),
             ]);
+
+            if ($isCloneReference && $request->hasFile('reference_video')) {
+                $refFile = $request->file('reference_video');
+                if ($refFile instanceof UploadedFile) {
+                    $storedRefPath = $refFile->store("references/project_{$project->id}", 'public');
+                    if ($storedRefPath !== false) {
+                        $styleTags[] = "[reference_video:{$storedRefPath}]";
+                        $project->update([
+                            'master_style_prompt' => implode(' ', $styleTags),
+                        ]);
+                    }
+                }
+            }
 
             if ($projectType === ProjectType::PRODUCT) {
                 $uploadedPaths = [];

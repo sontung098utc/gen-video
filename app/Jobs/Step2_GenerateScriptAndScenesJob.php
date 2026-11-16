@@ -49,7 +49,16 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
         $project = VideoProject::query()->with('productProfile')->findOrFail($this->videoProjectId);
 
         try {
-            if ($project->project_type === ProjectType::PRODUCT) {
+            $referenceVideoRelPath = null;
+            if (preg_match('/\[reference_video:([^\]]+)\]/', (string) $project->master_style_prompt, $refMatch) === 1) {
+                $referenceVideoRelPath = trim($refMatch[1]);
+            }
+
+            if ($referenceVideoRelPath !== null && \Illuminate\Support\Facades\Storage::disk('public')->exists($referenceVideoRelPath)) {
+                $refFullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($referenceVideoRelPath);
+                $remakeBrief = (string) ($project->topic_or_brief ?: $project->title);
+                $analysisResult = $geminiService->analyzeReferenceVideo($refFullPath, $remakeBrief, $project->id);
+            } elseif ($project->project_type === ProjectType::PRODUCT) {
                 $analysisResult = $this->runProductAnalysis($project, $geminiService);
             } else {
                 $topic = (string) ($project->topic_or_brief ?: $project->title);
@@ -64,7 +73,7 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
             DB::transaction(function () use ($project, $analysisResult, $scenesData): void {
                 // Bảo toàn các thẻ cấu hình Hypit ([motion_graphics], [template:...], [subtitle:...]) đã chọn khi tạo dự án
                 $existingTags = [];
-                if (preg_match_all('/\[(?:motion_graphics|template:[a-z_]+|subtitle:[a-z_]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
+                if (preg_match_all('/\[(?:motion_graphics|template:[a-z_]+|subtitle:[a-z_]+|reference_video:[^\]]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
                     $existingTags = array_unique($tagMatches[0]);
                 }
                 $generatedStyle = trim((string) ($analysisResult['master_style_prompt'] ?? $project->master_style_prompt));

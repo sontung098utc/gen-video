@@ -16,6 +16,7 @@
         heightMm: {{ (float) old('height_mm', 145) }},
         depthMm: {{ (float) old('depth_mm', 45) }},
         selectedFilesCount: 0,
+        selectedRefVideoName: '',
         estimatedCostUsd() {
             if (this.renderEngine === 'motion_graphics') {
                 return '0.000';
@@ -40,18 +41,18 @@
         </a>
     </div>
 
-    <!-- Bộ Chuyển Đổi 2 Tab: Tab 1 (Video Kiến Thức) & Tab 2 (Video Sản Phẩm) -->
-    <div class="grid grid-cols-2 gap-3 p-1.5 rounded-2xl bg-slate-900 border border-slate-800">
+    <!-- Bộ Chuyển Đổi 3 Tab: Tab 1 (Video Kiến Thức), Tab 2 (Video Sản Phẩm), Tab 3 (Clone Video Mẫu) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-1.5 rounded-2xl bg-slate-900 border border-slate-800">
         <button type="button"
                 @click="activeTab = 'knowledge'"
                 :class="activeTab === 'knowledge'
                     ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'"
-                class="py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2.5 transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
             </svg>
-            <span>Tab 1: Video Kiến Thức & Kể Chuyện</span>
+            <span>Tab 1: Video Kiến Thức</span>
         </button>
 
         <button type="button"
@@ -59,11 +60,23 @@
                 :class="activeTab === 'product'
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/60'"
-                class="py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2.5 transition">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                class="py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
             </svg>
-            <span>Tab 2: Video Sản Phẩm 3D (.glb)</span>
+            <span>Tab 2: Video Sản Phẩm 3D</span>
+        </button>
+
+        <button type="button"
+                @click="activeTab = 'clone_reference'"
+                :class="activeTab === 'clone_reference'
+                    ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'"
+                class="py-3.5 px-4 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition">
+            <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <span>Tab 3: Làm Lại Video Mẫu</span>
         </button>
     </div>
 
@@ -85,12 +98,18 @@
             <div class="flex items-center justify-between border-b border-slate-800 pb-4">
                 <div>
                     <h2 class="text-base font-semibold text-white"
-                        x-text="activeTab === 'knowledge' ? '1. Thông Tin Chủ Đề Kiến Thức (Gemini 3.8 / 3.5 Flash + Word-Anchored)' : '1. Hồ Sơ Sản Phẩm & Kích Thước Thực Tế (Gemini Vision + Trellis 3D)'">
+                        x-text="activeTab === 'knowledge'
+                            ? '1. Thông Tin Chủ Đề Kiến Thức (Gemini 3.8 / 3.5 Flash + Word-Anchored)'
+                            : (activeTab === 'product'
+                                ? '1. Hồ Sơ Sản Phẩm & Kích Thước Thực Tế (Gemini Vision + Trellis 3D)'
+                                : '1. Tải Lên Video Mẫu TikTok / Reels Để Clone & Làm Lại (Hypit Workflow)')">
                     </h2>
                     <p class="text-xs text-slate-400 mt-0.5"
                        x-text="activeTab === 'knowledge'
                            ? 'AI tự động phân tích chủ đề, viết lời thoại tiếng Việt cuốn hút và chia 5-8 phân cảnh.'
-                           : 'Tách nền CPU bằng rembg ($0), dựng mô hình .glb bằng Trellis ($0.02) và chuẩn hóa kích thước mm bằng trimesh.'">
+                           : (activeTab === 'product'
+                               ? 'Tách nền CPU bằng rembg ($0), dựng mô hình .glb bằng Trellis ($0.02) và chuẩn hóa kích thước mm bằng trimesh.'
+                               : 'Hệ thống trích xuất khung hình bằng FFmpeg và dùng Gemini Multimodal phân tích cấu trúc viral để làm lại thành video mới.')">
                     </p>
                 </div>
                 <span class="px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -121,6 +140,40 @@
                               rows="4"
                               placeholder="Nhập chủ đề, ý tưởng chính, các gạch đầu dòng hoặc đối tượng người xem mục tiêu..."
                               class="w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">{{ old('topic_or_brief') }}</textarea>
+                </div>
+            </div>
+
+            <!-- NỘI DUNG RIÊNG TAB 3: CLONE / LÀM LẠI VIDEO MẪU (.MP4) -->
+            <div x-show="activeTab === 'clone_reference'" x-cloak class="space-y-5">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+                        Tải lên Video Mẫu từ TikTok / Reels / Shorts (MP4, MOV, WebM — Tối đa 50MB) <span class="text-rose-400">*</span>
+                    </label>
+                    <label class="flex flex-col items-center justify-center border-2 border-dashed border-cyan-500/40 hover:border-cyan-400 rounded-xl p-6 cursor-pointer bg-slate-950/60 transition">
+                        <svg class="w-9 h-9 text-cyan-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                        <span class="text-sm font-medium text-slate-200">Bấm để chọn file Video mẫu (.mp4) từ máy tính</span>
+                        <span class="text-xs mt-1"
+                              :class="selectedRefVideoName ? 'text-cyan-400 font-semibold' : 'text-slate-500'"
+                              x-text="selectedRefVideoName ? ('Đã chọn: ' + selectedRefVideoName) : 'AI sẽ phân tích nhịp cắt, bố cục, góc máy & cấu trúc Hook của video này'"></span>
+                        <input type="file"
+                               name="reference_video"
+                               accept="video/mp4,video/quicktime,video/webm"
+                               :required="activeTab === 'clone_reference'"
+                               @change="selectedRefVideoName = $event.target.files[0] ? $event.target.files[0].name : ''"
+                               class="hidden">
+                    </label>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+                        Yêu cầu thay đổi / chủ đề mới khi làm lại (Tùy chọn)
+                    </label>
+                    <textarea name="remake_instructions"
+                              rows="4"
+                              placeholder="VD: Giữ nguyên nhịp chuyển cảnh nhanh và cấu trúc Hook 3 giây đầu như video mẫu, nhưng viết lại nội dung tiếng Việt về chủ đề 'Top 4 sản phẩm chăm sóc da bán chạy nhất' hoặc 'Review máy lọc không khí'..."
+                              class="w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500">{{ old('remake_instructions') }}</textarea>
                 </div>
             </div>
 
