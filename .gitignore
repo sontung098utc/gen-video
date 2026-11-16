@@ -55,3 +55,7 @@ yarn-error.log
 !/storage/app/public/products/turntable/.gitkeep
 !/storage/app/public/videos/.gitkeep
 !/storage/app/sfx_library/.gitkeep
+
+# 6. Tài nguyên tham khảo ngoài
+/hypit-main
+/hypit-main.zip

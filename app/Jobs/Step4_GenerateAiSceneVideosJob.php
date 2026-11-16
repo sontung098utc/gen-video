@@ -10,12 +10,15 @@ use App\Models\StoryboardScene;
 use App\Models\VideoProject;
 use App\Services\AI\FalLowCostService;
 use App\Services\Media\FfmpegVideoCompositorService;
+use App\Services\Media\HtmlMotionGraphicsService;
 use App\Services\Workflow\WorkflowOrchestrator;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 
@@ -51,6 +54,7 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
     public function handle(
         FalLowCostService $falService,
         FfmpegVideoCompositorService $ffmpegCompositor,
+        HtmlMotionGraphicsService $motionGraphicsService,
         WorkflowOrchestrator $orchestrator
     ): void {
         $project = VideoProject::query()->with(['scenes', 'productProfile'])->findOrFail($this->videoProjectId);
@@ -84,33 +88,66 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
                 $filePrefix = sprintf('project_%d_scene_%02d_%d', $project->id, $scene->scene_order, time());
                 $durationMs = $scene->duration_ms > 0 ? $scene->duration_ms : 5000;
 
+                // Nếu dự án/phân cảnh chủ động chọn chế độ Motion Graphics ($0.00)
+                if ($motionGraphicsService->shouldUseMotionGraphics($project, $scene)) {
+                    $this->renderMotionGraphicsScene(
+                        motionGraphicsService: $motionGraphicsService,
+                        project: $project,
+                        scene: $scene,
+                        filePrefix: $filePrefix,
+                        durationMs: $durationMs,
+                        disk: $disk
+                    );
+                    continue;
+                }
+
                 if ($project->cost_tier_mode === CostTierMode::ECO_MODE) {
                     // ----------------------------------------------------------------
                     // CHẾ ĐỘ ECO MODE: Flux Schnell ($0.003) + FFmpeg 60fps Ken Burns
+                    // Nếu Fal.ai lỗi -> tự động fallback sang HTML/Chromium Motion Graphics ($0.00)
                     // ----------------------------------------------------------------
-                    $keyframe = $falService->generateKeyframeWithFluxSchnell(
-                        visualPrompt: $fullPrompt,
-                        aspectRatio: $project->aspect_ratio,
-                        outputFileName: $filePrefix,
-                        videoProjectId: $project->id,
-                        storyboardSceneId: $scene->id
-                    );
+                    try {
+                        $keyframe = $falService->generateKeyframeWithFluxSchnell(
+                            visualPrompt: $fullPrompt,
+                            aspectRatio: $project->aspect_ratio,
+                            outputFileName: $filePrefix,
+                            videoProjectId: $project->id,
+                            storyboardSceneId: $scene->id
+                        );
 
-                    $videoRelativePath = "renders/{$filePrefix}_eco60fps.mp4";
-                    $videoFullPath = $disk->path($videoRelativePath);
+                        $videoRelativePath = "renders/{$filePrefix}_eco60fps.mp4";
+                        $videoFullPath = $disk->path($videoRelativePath);
 
-                    $ffmpegCompositor->generateKenBurnsClip(
-                        imagePath: $keyframe['image_full_path'],
-                        durationMs: $durationMs,
-                        outputPath: $videoFullPath,
-                        aspectRatio: $project->aspect_ratio,
-                        cameraMotion: $scene->camera_motion
-                    );
+                        $ffmpegCompositor->generateKenBurnsClip(
+                            imagePath: $keyframe['image_full_path'],
+                            durationMs: $durationMs,
+                            outputPath: $videoFullPath,
+                            aspectRatio: $project->aspect_ratio,
+                            cameraMotion: $scene->camera_motion
+                        );
 
-                    $scene->update([
-                        'image_file_path' => $keyframe['image_relative_path'],
-                        'video_file_path' => $videoRelativePath,
-                    ]);
+                        $scene->update([
+                            'image_file_path' => $keyframe['image_relative_path'],
+                            'video_file_path' => $videoRelativePath,
+                        ]);
+                    } catch (Throwable $falException) {
+                        // FalLowCostService đã ghi chi tiết lỗi vào storage/logs/fal_api.log;
+                        // chuyển sang kết xuất Motion Graphics $0.00 để không làm gián đoạn pipeline Eco Mode.
+                        Log::warning('Eco Mode Fal.ai fallback sang HtmlMotionGraphicsService ($0.00)', [
+                            'project_id' => $project->id,
+                            'scene_id' => $scene->id,
+                            'error' => $falException->getMessage(),
+                        ]);
+
+                        $this->renderMotionGraphicsScene(
+                            motionGraphicsService: $motionGraphicsService,
+                            project: $project,
+                            scene: $scene,
+                            filePrefix: $filePrefix,
+                            durationMs: $durationMs,
+                            disk: $disk
+                        );
+                    }
                 } else {
                     // ----------------------------------------------------------------
                     // CHẾ ĐỘ FULL AI VIDEO MODE: LTX-Video Image-to-Video ($0.020)
@@ -164,5 +201,38 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
             }
             throw $e;
         }
+    }
+
+    /**
+     * Kết xuất phân cảnh bằng HTML/Chromium Motion Graphics ($0.00) 60fps
+     * và lưu ảnh xem trước + video vào `storage/app/public/renders/`.
+     */
+    private function renderMotionGraphicsScene(
+        HtmlMotionGraphicsService $motionGraphicsService,
+        VideoProject $project,
+        StoryboardScene $scene,
+        string $filePrefix,
+        int $durationMs,
+        Filesystem $disk
+    ): void {
+        $payload = $motionGraphicsService->buildTemplatePayloadFromScene($project, $scene);
+
+        $imageRelativePath = "renders/{$filePrefix}_motion_gfx.png";
+        $videoRelativePath = "renders/{$filePrefix}_motion_gfx60fps.mp4";
+
+        $motionGraphicsService->renderSceneClip(
+            template: $payload['template'],
+            data: $payload['data'],
+            durationMs: $durationMs,
+            outputPath: $disk->path($videoRelativePath),
+            aspectRatio: $project->aspect_ratio,
+            cameraMotion: $scene->camera_motion ?: 'zoom_in',
+            previewPngOutputPath: $disk->path($imageRelativePath)
+        );
+
+        $scene->update([
+            'image_file_path' => $imageRelativePath,
+            'video_file_path' => $videoRelativePath,
+        ]);
     }
 }

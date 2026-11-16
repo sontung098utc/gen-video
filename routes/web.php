@@ -25,3 +25,7 @@ Route::post('/projects', [ProjectWebController::class, 'store'])
 Route::get('/projects/{id}/studio', [ProjectWebController::class, 'studio'])
     ->whereNumber('id')
     ->name('projects.studio');
+
+Route::post('/projects/{id}/clone-variant', [ProjectWebController::class, 'cloneVariant'])
+    ->whereNumber('id')
+    ->name('projects.clone-variant');

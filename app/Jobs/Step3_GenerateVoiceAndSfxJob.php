@@ -8,6 +8,7 @@ use App\Models\StoryboardScene;
 use App\Models\VideoProject;
 use App\Services\AI\EdgeTtsVietnameseService;
 use App\Services\Media\LocalSfxMatcherService;
+use App\Services\Media\WordAnchoredTimelineService;
 use App\Services\Workflow\WorkflowOrchestrator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -45,6 +46,7 @@ class Step3_GenerateVoiceAndSfxJob implements ShouldQueue
     public function handle(
         EdgeTtsVietnameseService $edgeTtsService,
         LocalSfxMatcherService $sfxMatcherService,
+        WordAnchoredTimelineService $timelineService,
         WorkflowOrchestrator $orchestrator
     ): void {
         $project = VideoProject::query()->with('scenes')->findOrFail($this->videoProjectId);
@@ -65,15 +67,16 @@ class Step3_GenerateVoiceAndSfxJob implements ShouldQueue
 
             /** @var StoryboardScene $scene */
             foreach ($project->scenes as $scene) {
-                if (trim($scene->narration_text) === '') {
+                $cleanNarration = $timelineService->stripTags((string) $scene->narration_text);
+                if ($cleanNarration === '') {
                     throw new RuntimeException("Phân cảnh #{$scene->scene_order} đang trống nội dung câu thoại tiếng Việt.");
                 }
 
                 $filePrefix = sprintf('project_%d_scene_%02d', $project->id, $scene->scene_order);
 
-                // 1. Gọi Edge-TTS với duy nhất giọng đọc $lockedVoiceName cho mọi phân cảnh
+                // 1. Gọi Edge-TTS với văn bản đã lọc bỏ thẻ @{...} nhưng vẫn giữ nguyên narration_text gốc trong DB cho Step 5
                 $ttsResult = $edgeTtsService->synthesizeSceneVoice(
-                    text: $scene->narration_text,
+                    text: $cleanNarration,
                     voice: $lockedVoiceName,
                     filePrefix: $filePrefix,
                     videoProjectId: $project->id,

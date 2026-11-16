@@ -7,6 +7,9 @@
         activeTab: '{{ old('project_type', 'knowledge') }}',
         aspectRatio: '{{ old('aspect_ratio', '9:16') }}',
         costTierMode: '{{ old('cost_tier_mode', 'eco_mode') }}',
+        renderEngine: '{{ old('render_engine', 'motion_graphics') }}',
+        motionTemplate: '{{ old('motion_template', 'auto') }}',
+        subtitleStyle: '{{ old('subtitle_style', 'karaoke_box') }}',
         workflowMode: '{{ old('workflow_mode', 'step_by_step') }}',
         voiceId: '{{ old('voice_id', 'vi-VN-NamMinhNeural') }}',
         widthMm: {{ (float) old('width_mm', 85) }},
@@ -14,6 +17,9 @@
         depthMm: {{ (float) old('depth_mm', 45) }},
         selectedFilesCount: 0,
         estimatedCostUsd() {
+            if (this.renderEngine === 'motion_graphics') {
+                return '0.000';
+            }
             const sceneUnit = this.costTierMode === 'eco_mode' ? 0.003 : 0.020;
             const trellis3d = this.activeTab === 'product' ? 0.020 : 0.000;
             return (trellis3d + (sceneUnit * 6)).toFixed(3);
@@ -67,6 +73,9 @@
         <input type="hidden" name="project_type" :value="activeTab">
         <input type="hidden" name="aspect_ratio" :value="aspectRatio">
         <input type="hidden" name="cost_tier_mode" :value="costTierMode">
+        <input type="hidden" name="render_engine" :value="renderEngine">
+        <input type="hidden" name="motion_template" :value="motionTemplate">
+        <input type="hidden" name="subtitle_style" :value="subtitleStyle">
         <input type="hidden" name="workflow_mode" :value="workflowMode">
         <input type="hidden" name="voice_id" :value="voiceId">
         <input type="hidden" name="voice_name" :value="voiceId">
@@ -76,7 +85,7 @@
             <div class="flex items-center justify-between border-b border-slate-800 pb-4">
                 <div>
                     <h2 class="text-base font-semibold text-white"
-                        x-text="activeTab === 'knowledge' ? '1. Thông Tin Chủ Đề Kiến Thức (Gemini 2.5 Flash NLP)' : '1. Hồ Sơ Sản Phẩm & Kích Thước Thực Tế (Gemini Vision + Trellis 3D)'">
+                        x-text="activeTab === 'knowledge' ? '1. Thông Tin Chủ Đề Kiến Thức (Gemini 3.8 / 3.5 Flash + Word-Anchored)' : '1. Hồ Sơ Sản Phẩm & Kích Thước Thực Tế (Gemini Vision + Trellis 3D)'">
                     </h2>
                     <p class="text-xs text-slate-400 mt-0.5"
                        x-text="activeTab === 'knowledge'
@@ -259,21 +268,32 @@
                 <h3 class="text-sm font-semibold text-white uppercase tracking-wider">3. Chiến Lược Chi Phí & Chế Độ Vận Hành</h3>
 
                 <div class="space-y-2.5">
-                    <label class="block text-xs text-slate-400">Chế độ tạo hình ảnh / chuyển động</label>
+                    <label class="block text-xs text-slate-400">Chế độ tạo hình ảnh / chuyển động (Hypit Engine & Fal.ai)</label>
                     <button type="button"
-                            @click="costTierMode = 'eco_mode'"
-                            :class="costTierMode === 'eco_mode' ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'"
+                            @click="renderEngine = 'motion_graphics'; costTierMode = 'eco_mode'"
+                            :class="renderEngine === 'motion_graphics' ? 'border-cyan-500 bg-cyan-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'"
                             class="w-full p-3 rounded-xl border text-left flex items-center justify-between transition">
                         <div>
-                            <div class="font-semibold text-sm text-emerald-400">Eco Mode — Siêu Tiết Kiệm ($0.003 / cảnh)</div>
-                            <div class="text-xs text-slate-400">Ảnh AI Flux Schnell + FFmpeg 60fps Dynamic Motion</div>
+                            <div class="font-semibold text-sm text-cyan-300">Hypit Motion Graphics — Miễn Phí ($0.00 / video)</div>
+                            <div class="text-xs text-slate-400">Render đồ họa chuyển động HTML/Chromium 60fps (Comment Sticker, Ranking, Spec 3D, Box)</div>
+                        </div>
+                        <span class="font-mono text-xs px-2 py-1 rounded bg-cyan-500/20 text-cyan-300">$0.000</span>
+                    </button>
+
+                    <button type="button"
+                            @click="renderEngine = 'ai_fal'; costTierMode = 'eco_mode'"
+                            :class="renderEngine === 'ai_fal' && costTierMode === 'eco_mode' ? 'border-emerald-500 bg-emerald-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'"
+                            class="w-full p-3 rounded-xl border text-left flex items-center justify-between transition">
+                        <div>
+                            <div class="font-semibold text-sm text-emerald-400">Eco Mode — Ảnh AI Fal.ai ($0.003 / cảnh)</div>
+                            <div class="text-xs text-slate-400">Ảnh AI Flux Schnell + FFmpeg 60fps Dynamic Motion (tự fallback Motion Graphics nếu lỗi)</div>
                         </div>
                         <span class="font-mono text-xs px-2 py-1 rounded bg-emerald-500/20 text-emerald-300">$0.003</span>
                     </button>
 
                     <button type="button"
-                            @click="costTierMode = 'full_ai_video_mode'"
-                            :class="costTierMode === 'full_ai_video_mode' ? 'border-purple-500 bg-purple-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'"
+                            @click="renderEngine = 'ai_fal'; costTierMode = 'full_ai_video_mode'"
+                            :class="renderEngine === 'ai_fal' && costTierMode === 'full_ai_video_mode' ? 'border-purple-500 bg-purple-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'"
                             class="w-full p-3 rounded-xl border text-left flex items-center justify-between transition">
                         <div>
                             <div class="font-semibold text-sm text-purple-300">Full AI Video Mode ($0.020 / clip 5s)</div>
@@ -281,6 +301,29 @@
                         </div>
                         <span class="font-mono text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-300">$0.020</span>
                     </button>
+                </div>
+
+                <!-- Tùy chọn Template Motion Graphics & Kiểu Phụ Đề Hypit -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1.5">Template Đồ Họa (Hypit)</label>
+                        <select x-model="motionTemplate"
+                                class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
+                            <option value="auto">Tự động chọn theo từng cảnh</option>
+                            <option value="comment_sticker">TikTok Comment Sticker (Câu hỏi Hook)</option>
+                            <option value="ranking_board">Bảng Xếp Hạng / Top List (TierBoard)</option>
+                            <option value="product_spec">Thẻ Thông Số Sản Phẩm 3D (mm & USP)</option>
+                            <option value="box_caption">Thẻ Tiêu Đề Nổi Bật (Box Caption)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1.5">Kiểu Phụ Đề Tiếng Việt</label>
+                        <select x-model="subtitleStyle"
+                                class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500">
+                            <option value="karaoke_box">Box Karaoke Hypit (Nền hộp nổi bật)</option>
+                            <option value="karaoke">Karaoke Vàng Truyền Thống (#FFFF00)</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Công tắc Chế Độ Vận Hành: Step-by-Step vs Full-Auto -->

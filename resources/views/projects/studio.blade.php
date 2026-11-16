@@ -44,6 +44,15 @@
                 </button>
             </div>
 
+            <button type="button"
+                    @click="openCloneModal()"
+                    class="px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 border border-purple-500/40 text-purple-200 text-xs font-semibold transition flex items-center gap-2">
+                <svg class="w-4 h-4 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <span>Nhân bản biến thể</span>
+            </button>
+
             <div class="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs flex items-center gap-2">
                 <span class="w-2.5 h-2.5 rounded-full"
                       :class="{
@@ -63,6 +72,104 @@
          :class="toastType === 'error' ? 'bg-rose-500/15 border-rose-500/40 text-rose-200' : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'">
         <span x-text="toastMessage"></span>
         <button type="button" @click="toastMessage = ''" class="text-xs underline ml-4">Đóng</button>
+    </div>
+
+    <!-- Modal Nhân Bản Biến Thể (Clone & Variants) -->
+    <div x-show="showCloneModal" x-cloak
+         @keydown.escape.window="showCloneModal = false"
+         class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div @click.away="showCloneModal = false"
+             class="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/95">
+                <div>
+                    <h3 class="font-display text-base font-bold text-white flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[11px]">CLONE & VARIANTS</span>
+                        <span>Nhân Bản Biến Thể Video</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">
+                        Tái sử dụng 100% mô hình 3D (.glb) $0.00 và kịch bản hiện có để tạo biến thể A/B Test Hook, Giọng đọc hoặc Chế độ chi phí.
+                    </p>
+                </div>
+                <button type="button" @click="showCloneModal = false" class="text-slate-400 hover:text-white text-lg leading-none px-2">✕</button>
+            </div>
+
+            <form method="POST" action="{{ route('projects.clone-variant', ['id' => $project->id]) }}" class="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                @csrf
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Tiêu đề biến thể mới</label>
+                    <input type="text" name="title" x-model="cloneForm.title" required
+                           class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-sm text-white focus:border-purple-400 focus:outline-none">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1.5">Giọng đọc Tiếng Việt (Edge-TTS)</label>
+                        <select name="voice_id" x-model="cloneForm.voice_id"
+                                class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-xs text-white focus:border-purple-400 focus:outline-none">
+                            <option value="vi-VN-NamMinhNeural">Nam Minh (vi-VN-NamMinhNeural)</option>
+                            <option value="vi-VN-HoaiMyNeural">Hoài My (vi-VN-HoaiMyNeural)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1.5">Phân tầng chi phí (Cost Tier)</label>
+                        <select name="cost_tier_mode" x-model="cloneForm.cost_tier_mode"
+                                class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-xs text-white focus:border-purple-400 focus:outline-none">
+                            <option value="eco_mode">Eco Mode ($0.003/cảnh + FFmpeg 60fps)</option>
+                            <option value="full_ai_video_mode">Full AI Video ($0.020/clip 5s)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1.5">Khung hình</label>
+                        <select name="aspect_ratio" x-model="cloneForm.aspect_ratio"
+                                class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-xs text-white focus:border-purple-400 focus:outline-none">
+                            <option value="9:16">9:16 (TikTok / Reels / Shorts)</option>
+                            <option value="16:9">16:9 (YouTube / Landscape)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1.5">Chế độ vận hành</label>
+                        <select name="workflow_mode" x-model="cloneForm.workflow_mode"
+                                class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-xs text-white focus:border-purple-400 focus:outline-none">
+                            <option value="step_by_step">Duyệt từng bước (Step-by-Step)</option>
+                            <option value="auto">Tự động hoàn toàn (Full-Auto)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="pt-2 border-t border-slate-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-purple-300">Tùy biến Hook Cảnh #1 (3 giây đầu giữ chân người xem)</span>
+                        <span class="text-[11px] text-slate-500">Để nguyên nếu muốn giữ kịch bản gốc</span>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Lời thoại Hook Cảnh #1 (Tiếng Việt)</label>
+                        <textarea name="hook_narration_text" rows="2" x-model="cloneForm.hook_narration_text"
+                                  placeholder="Nhập câu hook mở đầu mới cho Cảnh #1..."
+                                  class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-xs text-white focus:border-purple-400 focus:outline-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Visual Prompt Hook Cảnh #1 (Tiếng Anh)</label>
+                        <textarea name="hook_visual_prompt" rows="2" x-model="cloneForm.hook_visual_prompt"
+                                  placeholder="Nhập mô tả hình ảnh/góc quay mới cho Cảnh #1..."
+                                  class="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-xs font-mono text-cyan-200 focus:border-purple-400 focus:outline-none"></textarea>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-slate-800 flex items-center justify-end gap-3">
+                    <button type="button" @click="showCloneModal = false"
+                            class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">
+                        Hủy bỏ
+                    </button>
+                    <button type="submit"
+                            class="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-lg shadow-purple-600/25 transition">
+                        Nhân Bản & Mở Studio Mới →
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Hiển thị cảnh báo nếu dự án gặp lỗi FAILED -->
@@ -599,11 +706,36 @@ function studioController(initialData) {
         generationLogs: initialData.generation_logs || [],
         activeInspectorTab: 'cp1',
         isSubmitting: false,
+        showCloneModal: false,
         regeneratingSceneId: null,
         dragStartIndex: null,
         pollingTimer: null,
         toastMessage: '',
         toastType: 'success',
+
+        cloneForm: {
+            title: (initialData.project?.title || '') + ' (Biến thể)',
+            voice_id: initialData.project?.voice_id || 'vi-VN-NamMinhNeural',
+            cost_tier_mode: initialData.project?.cost_tier_mode || 'eco_mode',
+            aspect_ratio: initialData.project?.aspect_ratio || '9:16',
+            workflow_mode: initialData.project?.workflow_mode || 'step_by_step',
+            hook_narration_text: (initialData.scenes && initialData.scenes[0]?.narration_text) || '',
+            hook_visual_prompt: (initialData.scenes && initialData.scenes[0]?.visual_prompt) || '',
+        },
+
+        openCloneModal() {
+            const firstScene = this.scenes && this.scenes.length > 0 ? this.scenes[0] : null;
+            this.cloneForm = {
+                title: (this.project.title || '') + ' (Biến thể)',
+                voice_id: this.project.voice_id || 'vi-VN-NamMinhNeural',
+                cost_tier_mode: this.project.cost_tier_mode || 'eco_mode',
+                aspect_ratio: this.project.aspect_ratio || '9:16',
+                workflow_mode: this.project.workflow_mode || 'step_by_step',
+                hook_narration_text: firstScene?.narration_text || '',
+                hook_visual_prompt: firstScene?.visual_prompt || '',
+            };
+            this.showCloneModal = true;
+        },
 
         steps: [
             { number: 1, title: '1. Khởi tạo & 3D', subtitle: 'rembg + Trellis .glb' },

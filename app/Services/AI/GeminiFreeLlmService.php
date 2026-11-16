@@ -60,8 +60,13 @@ YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG JSON TRẢ VỀ:
   "scenes": [
     {
       "scene_order": 1,
-      "narration_text": "Lời thoại tiếng Việt tự nhiên, súc tích, giàu cảm xúc cho giọng đọc AI (15-28 từ mỗi cảnh)",
-      "visual_prompt": "Prompt tiếng Anh chi tiết mô tả khung hình để đưa vào Flux Schnell hoặc LTX-Video",
+      "narration_text": "Lời thoại tiếng Việt tự nhiên, súc tích (15-28 từ mỗi cảnh). Có thể chèn tối đa 1-2 thẻ neo từ khóa tùy chọn như @{whoosh}, @{pop}, @{sparkle}, @{zoom}, @{sticker} ngay trước từ khóa đắt giá để đồng bộ SFX/hiệu ứng.",
+      "prompt_kit": {
+        "subject_anchor": "Mô tả chi tiết chủ thể chính, chất liệu, hành động bằng tiếng Anh",
+        "shot_composition": "Góc máy, bố cục khung hình, ống kính bằng tiếng Anh (VD: medium close-up shot, eye-level, rule of thirds)",
+        "lighting_setting": "Ánh sáng, màu sắc, bối cảnh không gian bằng tiếng Anh (VD: warm golden rim lighting, futuristic studio background, 8k photorealistic)"
+      },
+      "visual_prompt": "Prompt tiếng Anh hoàn chỉnh tổng hợp từ prompt_kit để đưa vào Flux Schnell hoặc LTX-Video",
       "sfx_prompt": "Từ khóa hiệu ứng âm thanh ngắn gọn bằng tiếng Anh (VD: whoosh_fast, keyboard_typing, sparkle_chime)",
       "camera_motion": "Một trong các giá trị: zoom_in, zoom_out, pan_right, pan_left",
       "transition_type": "Một trong các giá trị: fade, smoothleft, wipeleft, circleopen, dissolve"
@@ -129,8 +134,13 @@ YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG JSON TRẢ VỀ:
   "scenes": [
     {
       "scene_order": 1,
-      "narration_text": "Câu thoại tiếng Việt cuốn hút (Hook -> Giải pháp -> Trải nghiệm -> Kêu gọi hành động CTA)",
-      "visual_prompt": "Prompt tiếng Anh mô tả bối cảnh đặt sản phẩm chuẩn tỷ lệ thực tế cho Flux Schnell / LTX-Video",
+      "narration_text": "Câu thoại tiếng Việt cuốn hút (Hook -> Giải pháp -> Trải nghiệm -> CTA). Có thể chèn tối đa 1-2 thẻ neo từ khóa tùy chọn như @{pop}, @{whoosh}, @{sparkle}, @{zoom}, @{sticker} ngay trước từ khóa điểm nhấn.",
+      "prompt_kit": {
+        "subject_anchor": "Mô tả chi tiết sản phẩm, chất liệu và tỷ lệ kích thước thực tế bằng tiếng Anh",
+        "shot_composition": "Góc máy, bố cục thương mại bằng tiếng Anh (VD: macro hero shot, low angle, shallow depth of field)",
+        "lighting_setting": "Ánh sáng studio và bối cảnh đặt sản phẩm bằng tiếng Anh (VD: luxury dark marble podium, golden rim light, 8k HDR)"
+      },
+      "visual_prompt": "Prompt tiếng Anh tổng hợp từ prompt_kit mô tả bối cảnh đặt sản phẩm chuẩn tỷ lệ thực tế cho Flux Schnell / LTX-Video",
       "sfx_prompt": "Từ khóa SFX tiếng Anh (VD: sparkle_chime, whoosh_fast, impact)",
       "camera_motion": "Một trong các giá trị: zoom_in, zoom_out, pan_right, pan_left",
       "transition_type": "Một trong các giá trị: fade, smoothleft, wipeleft, circleopen, dissolve"
@@ -241,6 +251,8 @@ PROMPT;
                         $decoded = json_decode($cleanedJson, true, 512, JSON_THROW_ON_ERROR);
 
                         if (is_array($decoded) && ! empty($decoded['scenes'])) {
+                            $decoded = $this->normalizeScenePromptKits($decoded);
+
                             $this->recordGenerationLog(
                                 videoProjectId: $videoProjectId,
                                 modelName: $candidateModel,
@@ -286,6 +298,58 @@ PROMPT;
     }
 
     /**
+     * Chuẩn hóa dữ liệu phân cảnh: ghép Structured Prompt Kit (`subject_anchor`, `shot_composition`, `lighting_setting`)
+     * thành `visual_prompt` hoàn chỉnh và đồng bộ `tagged_narration` (nếu có) sang `narration_text`.
+     *
+     * @param  array<string, mixed>  $decoded
+     * @return array<string, mixed>
+     */
+    private function normalizeScenePromptKits(array $decoded): array
+    {
+        if (! isset($decoded['scenes']) || ! is_array($decoded['scenes'])) {
+            return $decoded;
+        }
+
+        foreach ($decoded['scenes'] as $index => $scene) {
+            if (! is_array($scene)) {
+                continue;
+            }
+
+            // Ưu tiên giữ các thẻ neo @{...} nếu model trả về qua trường tagged_narration
+            $narration = trim((string) ($scene['narration_text'] ?? ''));
+            $taggedNarration = trim((string) ($scene['tagged_narration'] ?? ''));
+            if ($taggedNarration !== '' && ($narration === '' || (str_contains($taggedNarration, '@{') && ! str_contains($narration, '@{')))) {
+                $scene['narration_text'] = $taggedNarration;
+            }
+
+            // Lắp ghép prompt_kit -> visual_prompt chuẩn hóa
+            if (isset($scene['prompt_kit']) && is_array($scene['prompt_kit'])) {
+                $kit = $scene['prompt_kit'];
+                $kitParts = array_values(array_filter([
+                    trim((string) ($kit['subject_anchor'] ?? '')),
+                    trim((string) ($kit['shot_composition'] ?? '')),
+                    trim((string) ($kit['lighting_setting'] ?? '')),
+                ], static fn (string $part): bool => $part !== ''));
+
+                if ($kitParts !== []) {
+                    $assembledPrompt = implode(', ', $kitParts);
+                    $existingVisual = trim((string) ($scene['visual_prompt'] ?? ''));
+
+                    if ($existingVisual === '') {
+                        $scene['visual_prompt'] = $assembledPrompt;
+                    } elseif (! str_contains($existingVisual, $kitParts[0])) {
+                        $scene['visual_prompt'] = $assembledPrompt . ', ' . $existingVisual;
+                    }
+                }
+            }
+
+            $decoded['scenes'][$index] = $scene;
+        }
+
+        return $decoded;
+    }
+
+    /**
      * Bộ sinh kịch bản tiếng Việt dự phòng thông minh khi khóa Gemini Free Tier bị giới hạn Quota (HTTP 429).
      *
      * @return array<string, mixed>
@@ -301,38 +365,56 @@ PROMPT;
             'scenes' => [
                 [
                     'scene_order' => 1,
-                    'narration_text' => "Bạn đã bao giờ tự hỏi điều gì tạo nên sự khác biệt thực sự khi tìm hiểu về {$cleanTopic}?",
-                    'visual_prompt' => "Cinematic close-up shot illustrating {$cleanTopic}, glowing golden and cyan rim lighting, ultra detailed 8k photorealistic",
+                    'narration_text' => "Bạn đã bao giờ @{whoosh} tự hỏi điều gì tạo nên sự khác biệt thực sự khi tìm hiểu về {$cleanTopic}?",
+                    'prompt_kit' => [
+                        'subject_anchor' => "Conceptual 3D focal visualization representing {$cleanTopic}",
+                        'shot_composition' => 'Cinematic close-up shot, shallow depth of field',
+                        'lighting_setting' => 'Glowing golden and cyan rim lighting, dark studio backdrop, ultra detailed 8k photorealistic',
+                    ],
                     'sfx_prompt' => 'sparkle_chime',
                     'camera_motion' => 'zoom_in',
                     'transition_type' => 'fade',
                 ],
                 [
                     'scene_order' => 2,
-                    'narration_text' => "Thực tế cho thấy phần lớn mọi người thường bỏ qua nguyên lý cốt lõi nhất giúp tối ưu hóa kết quả gấp nhiều lần.",
-                    'visual_prompt' => "Dynamic modern infographic style 3D visualization about {$cleanTopic}, futuristic glass interface, dramatic lighting",
+                    'narration_text' => "Thực tế cho thấy phần lớn mọi người thường bỏ qua @{pop} nguyên lý cốt lõi nhất giúp tối ưu hóa kết quả gấp nhiều lần.",
+                    'prompt_kit' => [
+                        'subject_anchor' => "Dynamic modern 3D infographic visualization about {$cleanTopic}",
+                        'shot_composition' => 'Medium wide shot, balanced geometric framing',
+                        'lighting_setting' => 'Futuristic glass interface reflections, dramatic volumetric studio lighting',
+                    ],
                     'sfx_prompt' => 'whoosh_fast',
                     'camera_motion' => 'pan_right',
                     'transition_type' => 'smoothleft',
                 ],
                 [
                     'scene_order' => 3,
-                    'narration_text' => "Khi áp dụng đúng phương pháp khoa học, bạn sẽ tiết kiệm được hàng giờ đồng hồ mỗi tuần mà vẫn đạt hiệu quả vượt trội.",
-                    'visual_prompt' => "Inspiring high-tech workspace with warm sunlight streaming through windows, representing mastery of {$cleanTopic}, 8k HDR",
+                    'narration_text' => "Khi áp dụng đúng phương pháp khoa học, bạn sẽ @{sparkle} tiết kiệm được hàng giờ đồng hồ mỗi tuần mà vẫn đạt hiệu quả vượt trội.",
+                    'prompt_kit' => [
+                        'subject_anchor' => "Inspiring high-tech creative workspace representing mastery of {$cleanTopic}",
+                        'shot_composition' => 'Eye-level medium shot, smooth depth layering',
+                        'lighting_setting' => 'Warm sunlight streaming through modern windows, crisp 8k HDR color grading',
+                    ],
                     'sfx_prompt' => 'typing',
                     'camera_motion' => 'zoom_out',
                     'transition_type' => 'circleopen',
                 ],
                 [
                     'scene_order' => 4,
-                    'narration_text' => "Hãy bắt đầu áp dụng ngay hôm nay và theo dõi kênh để khám phá thêm nhiều kiến thức giá trị mỗi ngày nhé!",
-                    'visual_prompt' => "Epic wide angle shot with glowing golden particles celebrating success in {$cleanTopic}, cinematic bokeh 8k",
+                    'narration_text' => "Hãy bắt đầu áp dụng @{pop} ngay hôm nay và theo dõi kênh để khám phá thêm nhiều kiến thức giá trị mỗi ngày nhé!",
+                    'prompt_kit' => [
+                        'subject_anchor' => "Celebratory golden light particles symbolizing success in {$cleanTopic}",
+                        'shot_composition' => 'Epic wide angle shot, centered focal point',
+                        'lighting_setting' => 'Warm cinematic bokeh, glowing amber highlights, 8k photorealistic',
+                    ],
                     'sfx_prompt' => 'sparkle_chime',
                     'camera_motion' => 'zoom_in',
                     'transition_type' => 'dissolve',
                 ],
             ],
         ];
+
+        $data = $this->normalizeScenePromptKits($data);
 
         $this->recordGenerationLog(
             videoProjectId: $videoProjectId,
@@ -383,8 +465,12 @@ PROMPT;
             'scenes' => [
                 [
                     'scene_order' => 1,
-                    'narration_text' => "Nếu bạn đang tìm kiếm một giải pháp hoàn hảo cả về thiết kế lẫn công năng, hãy chiêm ngưỡng siêu phẩm {$cleanDesc}.",
-                    'visual_prompt' => "Hero commercial studio shot of {$cleanDesc} on a sleek dark marble pedestal with golden rim lighting, 8k",
+                    'narration_text' => "Nếu bạn đang tìm kiếm một giải pháp hoàn hảo cả về thiết kế lẫn công năng, hãy @{sparkle} chiêm ngưỡng siêu phẩm {$cleanDesc}.",
+                    'prompt_kit' => [
+                        'subject_anchor' => "Hero commercial product {$cleanDesc} with crisp realistic proportions",
+                        'shot_composition' => 'Low-angle hero studio shot, centered composition',
+                        'lighting_setting' => 'Sleek dark marble pedestal, golden rim lighting, 8k photorealistic',
+                    ],
                     'sfx_prompt' => 'sparkle_chime',
                     'camera_motion' => 'zoom_in',
                     'transition_type' => 'fade',
@@ -392,33 +478,47 @@ PROMPT;
                 [
                     'scene_order' => 2,
                     'narration_text' => sprintf(
-                        'Với kích thước chuẩn xác rộng %.0f milimét và cao %.0f milimét, từng đường nét đều được chế tác vô cùng tỉ mỉ.',
+                        'Với kích thước chuẩn xác @{pop} rộng %.0f milimét và cao %.0f milimét, từng đường nét đều được chế tác vô cùng tỉ mỉ.',
                         $widthMm,
                         $heightMm
                     ),
-                    'visual_prompt' => "Close-up macro product showcase highlighting premium texture and craftsmanship of {$cleanDesc}, studio bokeh 8k",
+                    'prompt_kit' => [
+                        'subject_anchor' => "Premium surface texture and craftsmanship details of {$cleanDesc}",
+                        'shot_composition' => 'Close-up macro product showcase, shallow depth of field',
+                        'lighting_setting' => 'Soft diffused studio key light with crisp specular highlights, bokeh 8k',
+                    ],
                     'sfx_prompt' => 'whoosh_fast',
                     'camera_motion' => 'pan_right',
                     'transition_type' => 'smoothleft',
                 ],
                 [
                     'scene_order' => 3,
-                    'narration_text' => 'Sản phẩm mang lại trải nghiệm đẳng cấp, bền bỉ và tiện lợi tối đa trong mọi không gian sử dụng hàng ngày.',
-                    'visual_prompt' => "Lifestyle commercial scene showing {$cleanDesc} in a modern luxury environment with warm natural light, 8k",
+                    'narration_text' => 'Sản phẩm mang lại @{whoosh} trải nghiệm đẳng cấp, bền bỉ và tiện lợi tối đa trong mọi không gian sử dụng hàng ngày.',
+                    'prompt_kit' => [
+                        'subject_anchor' => "{$cleanDesc} placed naturally in a real-world interior scale",
+                        'shot_composition' => 'Lifestyle medium shot, rule of thirds',
+                        'lighting_setting' => 'Modern luxury living space with warm natural window light, 8k HDR',
+                    ],
                     'sfx_prompt' => 'sparkle_chime',
                     'camera_motion' => 'zoom_out',
                     'transition_type' => 'circleopen',
                 ],
                 [
                     'scene_order' => 4,
-                    'narration_text' => 'Đặt hàng ngay hôm nay để nhận ưu đãi đặc biệt và trải nghiệm chất lượng vượt trội ngay tại nhà!',
-                    'visual_prompt' => "Final showcase shot of {$cleanDesc} with dramatic spotlight and luxury brand atmosphere, 8k",
+                    'narration_text' => 'Đặt hàng @{pop} ngay hôm nay để nhận ưu đãi đặc biệt và trải nghiệm chất lượng vượt trội ngay tại nhà!',
+                    'prompt_kit' => [
+                        'subject_anchor' => "Final flagship presentation of {$cleanDesc}",
+                        'shot_composition' => 'Dramatic three-quarter angle product shot',
+                        'lighting_setting' => 'Focused overhead spotlight, luxury brand dark studio atmosphere, 8k',
+                    ],
                     'sfx_prompt' => 'whoosh_fast',
                     'camera_motion' => 'zoom_in',
                     'transition_type' => 'dissolve',
                 ],
             ],
         ];
+
+        $data = $this->normalizeScenePromptKits($data);
 
         $this->recordGenerationLog(
             videoProjectId: $videoProjectId,

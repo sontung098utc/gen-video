@@ -101,10 +101,23 @@
                                     ${{ number_format($project->total_cost_usd, 4) }}
                                 </td>
                                 <td class="py-4 px-4 text-right">
-                                    <a href="{{ route('projects.studio', ['id' => $project->id]) }}"
-                                       class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-white text-xs font-semibold transition">
-                                        Mở Studio →
-                                    </a>
+                                    <div class="inline-flex items-center justify-end gap-2">
+                                        <form method="POST" action="{{ route('projects.clone-variant', ['id' => $project->id]) }}" class="inline">
+                                            @csrf
+                                            <button type="submit"
+                                                    title="Nhân bản biến thể nhanh từ dự án #{{ $project->id }}"
+                                                    class="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600 text-purple-200 hover:text-white border border-purple-500/30 text-xs font-semibold transition">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                                </svg>
+                                                Nhân bản
+                                            </button>
+                                        </form>
+                                        <a href="{{ route('projects.studio', ['id' => $project->id]) }}"
+                                           class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-indigo-600 text-white text-xs font-semibold transition">
+                                            Mở Studio →
+                                        </a>
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach

@@ -86,6 +86,9 @@ class ProjectWebController extends Controller
             'topic_or_brief' => ['nullable', 'string', 'max:5000'],
             'aspect_ratio' => ['required', 'string', 'in:9:16,16:9'],
             'cost_tier_mode' => ['required', 'string', 'in:eco_mode,full_ai_video_mode'],
+            'render_engine' => ['nullable', 'string', 'in:ai_fal,motion_graphics'],
+            'motion_template' => ['nullable', 'string', 'in:auto,comment_sticker,ranking_board,product_spec,box_caption'],
+            'subtitle_style' => ['nullable', 'string', 'in:karaoke,karaoke_box'],
             'workflow_mode' => ['required', 'string', 'in:step_by_step,auto'],
             'voice_id' => ['nullable', 'string', 'in:vi-VN-NamMinhNeural,vi-VN-HoaiMyNeural'],
             'voice_name' => ['nullable', 'string', 'in:vi-VN-NamMinhNeural,vi-VN-HoaiMyNeural'],
@@ -105,6 +108,18 @@ class ProjectWebController extends Controller
 
         $project = DB::transaction(function () use ($request, $validated, $projectType): VideoProject {
             $selectedVoice = (string) ($validated['voice_name'] ?? $validated['voice_id'] ?? 'vi-VN-NamMinhNeural');
+            $styleTags = [];
+            if (($validated['render_engine'] ?? 'ai_fal') === 'motion_graphics') {
+                $styleTags[] = '[motion_graphics]';
+            }
+            $motionTemplate = (string) ($validated['motion_template'] ?? 'auto');
+            if ($motionTemplate !== 'auto') {
+                $styleTags[] = "[template:{$motionTemplate}]";
+            }
+            $subtitleStyle = (string) ($validated['subtitle_style'] ?? 'karaoke');
+            if ($subtitleStyle === 'karaoke_box') {
+                $styleTags[] = '[subtitle:karaoke_box]';
+            }
 
             $project = VideoProject::query()->create([
                 'title' => $validated['title'],
@@ -115,6 +130,7 @@ class ProjectWebController extends Controller
                 'workflow_mode' => WorkflowMode::from($validated['workflow_mode']),
                 'cost_tier_mode' => CostTierMode::from($validated['cost_tier_mode']),
                 'voice_id' => $selectedVoice,
+                'master_style_prompt' => $styleTags !== [] ? implode(' ', $styleTags) : null,
                 'bgm_file_path' => storage_path('app/sfx_library/ambient_bgm.mp3'),
             ]);
 
@@ -180,6 +196,190 @@ class ProjectWebController extends Controller
         return redirect()
             ->route('projects.studio', ['id' => $project->id])
             ->with('success', 'Dự án đã được khởi tạo thành công!');
+    }
+
+    /**
+     * `POST /projects/{id}/clone-variant` — Nhân bản biến thể (Clone & Variants) từ dự án có sẵn.
+     * Tái sử dụng 100% mô hình 3D `.glb` đã chuẩn hóa ($0.00) và toàn bộ kịch bản phân cảnh,
+     * cho phép tùy biến nhanh Tiêu đề, Giọng đọc, Khung hình, Chế độ chi phí & Hook Cảnh #1.
+     */
+    public function cloneVariant(Request $request, int $id): RedirectResponse
+    {
+        $source = VideoProject::query()
+            ->with(['productProfile', 'scenes'])
+            ->findOrFail($id);
+
+        $validated = $request->validate([
+            'title' => ['nullable', 'string', 'max:255'],
+            'voice_id' => ['nullable', 'string', 'in:vi-VN-NamMinhNeural,vi-VN-HoaiMyNeural'],
+            'aspect_ratio' => ['nullable', 'string', 'in:9:16,16:9'],
+            'cost_tier_mode' => ['nullable', 'string', 'in:eco_mode,full_ai_video_mode'],
+            'hook_narration_text' => ['nullable', 'string', 'max:2000'],
+            'hook_visual_prompt' => ['nullable', 'string', 'max:2000'],
+            'workflow_mode' => ['nullable', 'string', 'in:step_by_step,auto'],
+        ]);
+
+        $newTitle = filled($validated['title'] ?? null)
+            ? trim((string) $validated['title'])
+            : $source->title . ' (Biến thể)';
+        $newVoiceId = (string) ($validated['voice_id'] ?? $source->voice_id);
+        $newAspectRatio = (string) ($validated['aspect_ratio'] ?? $source->aspect_ratio);
+        $newCostTierMode = isset($validated['cost_tier_mode'])
+            ? CostTierMode::from($validated['cost_tier_mode'])
+            : $source->cost_tier_mode;
+        $newWorkflowMode = isset($validated['workflow_mode'])
+            ? WorkflowMode::from($validated['workflow_mode'])
+            : $source->workflow_mode;
+
+        /** @var StoryboardScene|null $firstSourceScene */
+        $firstSourceScene = $source->scenes->first();
+
+        $voiceChanged = $newVoiceId !== $source->voice_id;
+        $aspectRatioChanged = $newAspectRatio !== $source->aspect_ratio;
+        $costTierChanged = $newCostTierMode !== $source->cost_tier_mode;
+        $hookNarrationOverride = filled($validated['hook_narration_text'] ?? null)
+            ? trim((string) $validated['hook_narration_text'])
+            : null;
+        $hookVisualOverride = filled($validated['hook_visual_prompt'] ?? null)
+            ? trim((string) $validated['hook_visual_prompt'])
+            : null;
+
+        $hookNarrationChanged = $hookNarrationOverride !== null
+            && $hookNarrationOverride !== trim((string) ($firstSourceScene?->narration_text ?? ''));
+        $hookVisualChanged = $hookVisualOverride !== null
+            && $hookVisualOverride !== trim((string) ($firstSourceScene?->visual_prompt ?? ''));
+
+        $clonedProject = DB::transaction(function () use (
+            $source,
+            $newTitle,
+            $newVoiceId,
+            $newAspectRatio,
+            $newCostTierMode,
+            $newWorkflowMode,
+            $voiceChanged,
+            $aspectRatioChanged,
+            $costTierChanged,
+            $hookNarrationOverride,
+            $hookVisualOverride,
+            $hookNarrationChanged,
+            $hookVisualChanged
+        ): VideoProject {
+            $cloned = VideoProject::query()->create([
+                'title' => $newTitle,
+                'project_type' => $source->project_type,
+                'topic_or_brief' => $source->topic_or_brief,
+                'aspect_ratio' => $newAspectRatio,
+                'status' => ProjectStatus::DRAFT,
+                'workflow_mode' => $newWorkflowMode,
+                'cost_tier_mode' => $newCostTierMode,
+                'voice_id' => $newVoiceId,
+                'master_style_prompt' => $source->master_style_prompt,
+                'bgm_file_path' => $source->bgm_file_path ?? storage_path('app/sfx_library/ambient_bgm.mp3'),
+                'final_video_path' => null,
+                'total_duration_ms' => 0,
+                'total_cost_usd' => 0.0,
+                'error_message' => null,
+            ]);
+
+            // Nhân bản ProductProfile và tái sử dụng normalized_glb_path ($0.00) với cache_key duy nhất
+            if ($source->productProfile instanceof ProductProfile) {
+                $srcProfile = $source->productProfile;
+                $baseKey = substr($srcProfile->cache_key, 0, 96);
+                $uniqueCacheKey = $baseKey . '_v' . $cloned->id;
+                $suffixCounter = 1;
+                while (ProductProfile::query()->where('cache_key', $uniqueCacheKey)->exists()) {
+                    $uniqueCacheKey = $baseKey . '_v' . $cloned->id . '_' . $suffixCounter++;
+                }
+
+                ProductProfile::query()->create([
+                    'video_project_id' => $cloned->id,
+                    'product_name' => $srcProfile->product_name,
+                    'sku_code' => $srcProfile->sku_code,
+                    'product_description' => $srcProfile->product_description,
+                    'width_mm' => $srcProfile->width_mm,
+                    'height_mm' => $srcProfile->height_mm,
+                    'depth_mm' => $srcProfile->depth_mm,
+                    'original_image_paths' => $srcProfile->original_image_paths,
+                    'nobg_image_path' => $srcProfile->nobg_image_path,
+                    'customer_analysis_json' => $srcProfile->customer_analysis_json,
+                    'raw_glb_path' => $srcProfile->raw_glb_path,
+                    'normalized_glb_path' => $srcProfile->normalized_glb_path,
+                    'cache_key' => $uniqueCacheKey,
+                ]);
+            }
+
+            // Nhân bản toàn bộ các phân cảnh và áp dụng ghi đè Hook Cảnh #1 nếu có
+            $invalidateAllVisuals = $aspectRatioChanged || $costTierChanged;
+
+            foreach ($source->scenes->values() as $index => $scene) {
+                $isFirstScene = $index === 0 || $scene->scene_order === 1;
+                $narrationText = ($isFirstScene && $hookNarrationOverride !== null)
+                    ? $hookNarrationOverride
+                    : $scene->narration_text;
+                $visualPrompt = ($isFirstScene && $hookVisualOverride !== null)
+                    ? $hookVisualOverride
+                    : $scene->visual_prompt;
+
+                $clearAudio = $voiceChanged || ($isFirstScene && $hookNarrationChanged);
+                $clearVisual = $invalidateAllVisuals || ($isFirstScene && $hookVisualChanged);
+
+                StoryboardScene::query()->create([
+                    'video_project_id' => $cloned->id,
+                    'scene_order' => $index + 1,
+                    'narration_text' => $narrationText,
+                    'visual_prompt' => $visualPrompt,
+                    'sfx_prompt' => $scene->sfx_prompt,
+                    'camera_motion' => $scene->camera_motion,
+                    'transition_type' => $scene->transition_type,
+                    'transition_duration_ms' => $scene->transition_duration_ms,
+                    'duration_ms' => $clearAudio ? 0 : $scene->duration_ms,
+                    'voice_file_path' => $clearAudio ? null : $scene->voice_file_path,
+                    'subtitle_file_path' => $clearAudio ? null : $scene->subtitle_file_path,
+                    'image_file_path' => $clearVisual ? null : $scene->image_file_path,
+                    'video_file_path' => $clearVisual ? null : $scene->video_file_path,
+                    'sfx_file_path' => $scene->sfx_file_path,
+                ]);
+            }
+
+            return $cloned;
+        });
+
+        // Điều phối thông minh (Smart Reuse) dựa trên phần dữ liệu đã có & thay đổi
+        try {
+            if ($source->scenes->isEmpty()) {
+                if ($source->project_type === ProjectType::PRODUCT && filled($source->productProfile?->normalized_glb_path)) {
+                    if ($newWorkflowMode === WorkflowMode::AUTO) {
+                        $this->orchestrator->transitionAndDispatchJob($clonedProject, ProjectStatus::SCRIPTING);
+                    } else {
+                        $clonedProject->update(['status' => ProjectStatus::WAITING_APPROVAL_PRODUCT]);
+                    }
+                } else {
+                    $this->orchestrator->dispatchNextStep($clonedProject);
+                }
+            } else {
+                $onlyVoiceChanged = $voiceChanged
+                    && ! $hookNarrationChanged
+                    && ! $hookVisualChanged
+                    && ! $aspectRatioChanged
+                    && ! $costTierChanged;
+
+                if ($newWorkflowMode === WorkflowMode::AUTO || $onlyVoiceChanged) {
+                    $this->orchestrator->transitionAndDispatchJob($clonedProject, ProjectStatus::GENERATING_AUDIO);
+                } else {
+                    // Chế độ Step-by-Step: dừng tại Cổng duyệt 2 (CP2) để người dùng rà soát kịch bản & Hook Cảnh #1
+                    $clonedProject->update([
+                        'status' => ProjectStatus::WAITING_APPROVAL_SCRIPT,
+                        'error_message' => null,
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->orchestrator->markAsFailed($clonedProject, $e->getMessage());
+        }
+
+        return redirect()
+            ->route('projects.studio', ['id' => $clonedProject->id])
+            ->with('success', 'Đã nhân bản biến thể dự án thành công!');
     }
 
     /**

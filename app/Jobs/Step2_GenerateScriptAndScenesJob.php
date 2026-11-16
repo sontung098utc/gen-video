@@ -62,10 +62,18 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
             }
 
             DB::transaction(function () use ($project, $analysisResult, $scenesData): void {
+                // Bảo toàn các thẻ cấu hình Hypit ([motion_graphics], [template:...], [subtitle:...]) đã chọn khi tạo dự án
+                $existingTags = [];
+                if (preg_match_all('/\[(?:motion_graphics|template:[a-z_]+|subtitle:[a-z_]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
+                    $existingTags = array_unique($tagMatches[0]);
+                }
+                $generatedStyle = trim((string) ($analysisResult['master_style_prompt'] ?? $project->master_style_prompt));
+                $finalMasterStyle = trim(implode(' ', $existingTags) . ' ' . $generatedStyle);
+
                 // Cập nhật tiêu đề gợi ý và master_style_prompt cho dự án
                 $project->update([
                     'title' => (string) ($analysisResult['title'] ?? $project->title),
-                    'master_style_prompt' => (string) ($analysisResult['master_style_prompt'] ?? $project->master_style_prompt),
+                    'master_style_prompt' => $finalMasterStyle !== '' ? $finalMasterStyle : null,
                 ]);
 
                 // Lưu kết quả phân tích chân dung khách hàng vào ProductProfile (nếu là dự án PRODUCT)

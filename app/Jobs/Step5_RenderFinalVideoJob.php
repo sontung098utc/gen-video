@@ -9,6 +9,7 @@ use App\Models\StoryboardScene;
 use App\Models\VideoProject;
 use App\Services\Media\AssSubtitleService;
 use App\Services\Media\FfmpegVideoCompositorService;
+use App\Services\Media\WordAnchoredTimelineService;
 use App\Services\Workflow\WorkflowOrchestrator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -47,6 +48,7 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
     public function handle(
         AssSubtitleService $assSubtitleService,
         FfmpegVideoCompositorService $ffmpegCompositor,
+        WordAnchoredTimelineService $timelineService,
         WorkflowOrchestrator $orchestrator
     ): void {
         $project = VideoProject::query()->with('scenes')->findOrFail($this->videoProjectId);
@@ -102,35 +104,54 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
                     ];
                 }
 
-                // Định vị phụ đề .vtt của cảnh trên trục thời gian tổng
-                if ($scene->subtitle_file_path !== null && $disk->exists($scene->subtitle_file_path)) {
-                    $vttTimeline[] = [
-                        'vtt_path' => $disk->path($scene->subtitle_file_path),
-                        'offset_ms' => $runningOffsetMs,
-                    ];
-                }
-
                 $sceneDurationMs = $scene->duration_ms > 0
                     ? $scene->duration_ms
                     : (int) round($ffmpegCompositor->probeMediaDurationSeconds($disk->path($scene->voice_file_path)) * 1000);
 
+                // Định vị phụ đề .vtt của cảnh trên trục thời gian tổng và trích xuất SFX neo theo từng từ (@{pop}, @{whoosh}, @{sparkle}...)
+                if ($scene->subtitle_file_path !== null && $disk->exists($scene->subtitle_file_path)) {
+                    $vttFullPath = $disk->path($scene->subtitle_file_path);
+                    $vttTimeline[] = [
+                        'vtt_path' => $vttFullPath,
+                        'offset_ms' => $runningOffsetMs,
+                    ];
+
+                    $anchors = $timelineService->extractWordAnchors(
+                        taggedNarration: (string) $scene->narration_text,
+                        vttFullPath: $vttFullPath,
+                        sceneOffsetMs: $runningOffsetMs,
+                        sceneDurationMs: $sceneDurationMs
+                    );
+
+                    foreach ($anchors['sfx_events'] as $sfxEvent) {
+                        $sfxTimeline[] = [
+                            'file_path' => $sfxEvent['file_path'],
+                            'start_ms' => $sfxEvent['start_ms'],
+                        ];
+                    }
+                }
+
                 $runningOffsetMs += $sceneDurationMs;
             }
 
-            // 1. Tạo file phụ đề .ass tổng hợp với hiệu ứng Karaoke màu vàng #FFFF00
+            // 1. Tạo file phụ đề .ass tổng hợp (hỗ trợ kiểu Karaoke vàng hoặc Box Karaoke Hypit)
+            $subtitleStylePreset = str_contains(strtolower((string) $project->master_style_prompt), '[subtitle:karaoke_box]')
+                ? 'karaoke_box'
+                : 'karaoke';
+
             $assFilePath = "{$buildDir}/merged_subtitles.ass";
             if (count($vttTimeline) === 1 && $vttTimeline[0]['offset_ms'] === 0) {
                 $assSubtitleService->convertVttToAss(
                     vttFilePath: $vttTimeline[0]['vtt_path'],
                     assOutputPath: $assFilePath,
-                    stylePreset: 'karaoke',
+                    stylePreset: $subtitleStylePreset,
                     aspectRatio: $project->aspect_ratio
                 );
             } else {
                 $assSubtitleService->mergeSceneVttsToAss(
                     sceneVttTimeline: $vttTimeline,
                     assOutputPath: $assFilePath,
-                    stylePreset: 'karaoke',
+                    stylePreset: $subtitleStylePreset,
                     aspectRatio: $project->aspect_ratio
                 );
             }
