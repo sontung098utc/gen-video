@@ -281,6 +281,136 @@ PROMPT;
     }
 
     /**
+     * Giải mã từng Shot của video gốc (theo kiến trúc JuneYaooo/rea-video) và viết lại thành kịch bản Remake
+     * khớp đúng số lượng Shot, thời lượng từng Shot (`duration_ms`), góc máy, ánh sáng và Prompt đảo ngược.
+     *
+     * @param  array{meta?: array<string, mixed>, shots?: array<int, array<string, mixed>>}  $breakdownData
+     * @return array<string, mixed>
+     */
+    public function analyzeReaVideoShots(
+        array $breakdownData,
+        string $remakeInstructions = '',
+        ?int $videoProjectId = null
+    ): array {
+        $shots = (array) ($breakdownData['shots'] ?? []);
+        $meta = (array) ($breakdownData['meta'] ?? []);
+
+        $systemPrompt = <<<'PROMPT'
+Bạn là Chuyên gia Reverse-Engineering Video theo chuẩn JuneYaooo/rea-video (VIDEO.md) và Đạo diễn Remake Video Ngắn AI.
+Bạn nhận được danh sách từng Shot đã được FFmpeg tách chính xác từ video gốc (kèm ảnh khung hình đầu tiên của mỗi Shot và thời lượng mili-giây `duration_ms`).
+
+NHIỆM VỤ BẮT BUỘC:
+1. Với MỖI Shot trong danh sách đầu vào (giữ nguyên đúng số lượng Shot và thứ tự `scene_order` = `shot_index`):
+   - Xác định `shot_type`: `ai_video`, `live_footage`, `3d_animation`, `code_ui`, hoặc `avatar`.
+   - Đảo ngược Prompt thị giác (`reverse_engineered_prompt` / `prompt_kit`) giữ nguyên góc máy, bố cục khung hình, ánh sáng và chuyển động camera của Shot gốc, nhưng thay thế chủ thể/nội dung theo yêu cầu Remake mới của người dùng (nếu có).
+   - Viết `narration_text` tiếng Việt tự nhiên, độ dài vừa khớp với `duration_ms` của Shot đó (khoảng 2.8 từ mỗi giây), có gắn thẻ neo từ khóa (`@{pop}`, `@{whoosh}`, `@{sparkle}`) ở điểm nhấn.
+   - Chọn `camera_motion` (`zoom_in`, `zoom_out`, `pan_right`, `pan_left`) và `transition_type` (`fade`, `smoothleft`, `wipeleft`, `circleopen`, `dissolve`) sát với Shot gốc.
+
+YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG JSON TRẢ VỀ:
+{
+  "title": "Tiêu đề video Remake tiếng Việt cuốn hút",
+  "master_style_prompt": "Phong cách hình ảnh, màu sắc và ánh sáng tổng thể trích xuất từ video gốc",
+  "recommended_bgm_mood": "upbeat_modern",
+  "scenes": [
+    {
+      "scene_order": 1,
+      "shot_type": "ai_video",
+      "camera_angle": "Close-up / Eye-level / Low-angle",
+      "lighting_and_color": "Mô tả ánh sáng và tông màu của shot",
+      "narration_text": "Lời thoại tiếng Việt vừa khớp thời lượng shot (có @{pop} hoặc @{whoosh})",
+      "tagged_narration": "Lời thoại tiếng Việt kèm thẻ @{pop}, @{whoosh}",
+      "prompt_kit": {
+        "subject_anchor": "Chủ thể mới theo yêu cầu remake nhưng giữ đúng tư thế/vị trí shot gốc",
+        "shot_composition": "Góc máy và bố cục giống shot gốc",
+        "lighting_setting": "Ánh sáng và bối cảnh"
+      },
+      "visual_prompt": "Prompt tiếng Anh chi tiết ghép từ prompt_kit",
+      "sfx_prompt": "whoosh_fast",
+      "camera_motion": "zoom_in",
+      "transition_type": "fade"
+    }
+  ]
+}
+PROMPT;
+
+        $instructions = trim($remakeInstructions) !== ''
+            ? trim($remakeInstructions)
+            : 'Giữ nguyên cấu trúc từng shot, góc máy, nhịp chuyển cảnh và phong cách thị giác của video gốc; chuyển thể lời thoại tiếng Việt tự nhiên và cuốn hút.';
+
+        $shotSummaryLines = [];
+        foreach ($shots as $shot) {
+            $shotSummaryLines[] = sprintf(
+                '- Shot #%d: start=%dms, end=%dms, duration=%dms',
+                (int) ($shot['shot_index'] ?? 1),
+                (int) ($shot['start_ms'] ?? 0),
+                (int) ($shot['end_ms'] ?? 3000),
+                (int) ($shot['duration_ms'] ?? 3000)
+            );
+        }
+
+        $userPrompt = sprintf(
+            "THÔNG TIN VIDEO GỐC (%dx%d, %.2fs, %d shots):\n%s\n\nYÊU CẦU REMAKE TỪ NGƯỜI DÙNG:\n\"%s\"\n\nHãy xuất JSON với đúng %d scenes tương ứng %d shots đính kèm.",
+            (int) ($meta['width'] ?? 720),
+            (int) ($meta['height'] ?? 1280),
+            (float) ($meta['duration_sec'] ?? 15.0),
+            count($shots),
+            implode("\n", $shotSummaryLines),
+            $instructions,
+            count($shots),
+            count($shots)
+        );
+
+        $parts = [['text' => $userPrompt]];
+
+        foreach (array_slice($shots, 0, 10) as $shot) {
+            $framePath = (string) ($shot['first_frame_path'] ?? $shot['mid_frame_path'] ?? '');
+            if ($framePath !== '' && is_file($framePath) && is_readable($framePath)) {
+                $rawBytes = @file_get_contents($framePath);
+                if ($rawBytes !== false && $rawBytes !== '') {
+                    $parts[] = [
+                        'inline_data' => [
+                            'mime_type' => 'image/jpeg',
+                            'data' => base64_encode($rawBytes),
+                        ],
+                    ];
+                }
+            }
+        }
+
+        try {
+            $result = $this->callGeminiJsonEndpoint(
+                systemPrompt: $systemPrompt,
+                userParts: $parts,
+                actionType: 'rea_video_breakdown',
+                videoProjectId: $videoProjectId,
+                sanitizedRequestMeta: [
+                    'shots_count' => count($shots),
+                    'remake_instructions' => $instructions,
+                ]
+            );
+
+            return $this->normalizeScenePromptKits($result);
+        } catch (Throwable $e) {
+            Log::warning('[GeminiFreeLlmService] Chuyển sang Fallback theo từng Shot cho analyzeReaVideoShots: ' . $e->getMessage());
+
+            $fallback = $this->buildFallbackKnowledgeScript($instructions, $videoProjectId, $e->getMessage());
+            // Khớp lại số lượng cảnh theo số Shot tách được
+            if ($shots !== []) {
+                $baseScenes = $fallback['scenes'];
+                $matchedScenes = [];
+                foreach ($shots as $idx => $shot) {
+                    $templateScene = $baseScenes[$idx % count($baseScenes)];
+                    $templateScene['scene_order'] = (int) ($shot['shot_index'] ?? ($idx + 1));
+                    $matchedScenes[] = $templateScene;
+                }
+                $fallback['scenes'] = $matchedScenes;
+            }
+
+            return $fallback;
+        }
+    }
+
+    /**
      * Trích xuất các khung hình JPEG đại diện từ video mẫu bằng FFmpeg (giới hạn luồng -threads 6).
      *
      * @return array<int, string>

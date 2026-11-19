@@ -49,12 +49,28 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
         $project = VideoProject::query()->with('productProfile')->findOrFail($this->videoProjectId);
 
         try {
+            $reaVideoRelPath = null;
+            if (preg_match('/\[rea_video_remake:([^\]]+)\]/', (string) $project->master_style_prompt, $reaMatch) === 1) {
+                $reaVideoRelPath = trim($reaMatch[1]);
+            }
+
             $referenceVideoRelPath = null;
             if (preg_match('/\[reference_video:([^\]]+)\]/', (string) $project->master_style_prompt, $refMatch) === 1) {
                 $referenceVideoRelPath = trim($refMatch[1]);
             }
 
-            if ($referenceVideoRelPath !== null && \Illuminate\Support\Facades\Storage::disk('public')->exists($referenceVideoRelPath)) {
+            if ($reaVideoRelPath !== null && \Illuminate\Support\Facades\Storage::disk('public')->exists($reaVideoRelPath)) {
+                $reaThreshold = 0.28;
+                if (preg_match('/\[rea_threshold:([0-9.]+)\]/', (string) $project->master_style_prompt, $thMatch) === 1) {
+                    $reaThreshold = max(0.10, min(0.60, (float) $thMatch[1]));
+                }
+                $analysisResult = $this->runReaVideoBreakdownAndRemake(
+                    project: $project,
+                    reaVideoRelPath: $reaVideoRelPath,
+                    threshold: $reaThreshold,
+                    geminiService: $geminiService
+                );
+            } elseif ($referenceVideoRelPath !== null && \Illuminate\Support\Facades\Storage::disk('public')->exists($referenceVideoRelPath)) {
                 $refFullPath = \Illuminate\Support\Facades\Storage::disk('public')->path($referenceVideoRelPath);
                 $remakeBrief = (string) ($project->topic_or_brief ?: $project->title);
                 $analysisResult = $geminiService->analyzeReferenceVideo($refFullPath, $remakeBrief, $project->id);
@@ -73,7 +89,7 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
             DB::transaction(function () use ($project, $analysisResult, $scenesData): void {
                 // Bảo toàn các thẻ cấu hình Hypit ([motion_graphics], [template:...], [subtitle:...]) đã chọn khi tạo dự án
                 $existingTags = [];
-                if (preg_match_all('/\[(?:motion_graphics|template:[a-z_]+|subtitle:[a-z_]+|reference_video:[^\]]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
+                if (preg_match_all('/\[(?:motion_graphics|template:[a-z_]+|subtitle:[a-z_]+|reference_video:[^\]]+|rea_video_remake:[^\]]+|rea_threshold:[0-9.]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
                     $existingTags = array_unique($tagMatches[0]);
                 }
                 $generatedStyle = trim((string) ($analysisResult['master_style_prompt'] ?? $project->master_style_prompt));
@@ -124,6 +140,96 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
             $orchestrator->markAsFailed($project, 'Step 2 (Biên tập Kịch bản & Phân cảnh) thất bại: ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * Chạy script `scripts/rea_video_breakdown.py` (tách Shot bằng FFmpeg theo kiến trúc JuneYaooo/rea-video),
+     * gửi khung hình từng Shot lên Gemini Multimodal để đảo ngược Prompt & viết kịch bản Remake khớp từng Shot,
+     * và lưu báo cáo `breakdown.json` + `VIDEO.md` vào `storage/app/public/rea_video/project_{id}/`.
+     *
+     * @return array<string, mixed>
+     */
+    private function runReaVideoBreakdownAndRemake(
+        VideoProject $project,
+        string $reaVideoRelPath,
+        float $threshold,
+        GeminiFreeLlmService $geminiService
+    ): array {
+        $disk = Storage::disk('public');
+        $inputVideoPath = $disk->path($reaVideoRelPath);
+        $outputDir = $disk->path("rea_video/project_{$project->id}");
+        if (! is_dir($outputDir)) {
+            mkdir($outputDir, 0775, true);
+        }
+
+        $pythonBin = (string) config('services.python.binary', 'python');
+        $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
+        $ffprobeBin = (string) config('services.ffmpeg.ffprobe_binary', '/usr/local/bin/ffprobe');
+        $maxThreads = max(1, min(6, (int) config('services.ffmpeg.max_threads', 6)));
+
+        $process = new \Symfony\Component\Process\Process([
+            $pythonBin,
+            base_path('scripts/rea_video_breakdown.py'),
+            '--input',
+            $inputVideoPath,
+            '--output-dir',
+            $outputDir,
+            '--ffmpeg',
+            $ffmpegBin,
+            '--ffprobe',
+            $ffprobeBin,
+            '--threshold',
+            (string) $threshold,
+            '--max-shots',
+            '10',
+            '--threads',
+            (string) $maxThreads,
+        ], base_path(), [
+            'OMP_NUM_THREADS' => '6',
+            'ORT_NUM_THREADS' => '6',
+        ]);
+        $process->setTimeout(180);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new RuntimeException('Lỗi Rea-Video Shot Breakdown: ' . trim($process->getErrorOutput() ?: $process->getOutput()));
+        }
+
+        $breakdownPath = $outputDir . DIRECTORY_SEPARATOR . 'breakdown.json';
+        if (! is_file($breakdownPath)) {
+            throw new RuntimeException('Không tìm thấy file breakdown.json sau khi tách Shot.');
+        }
+
+        $breakdownData = json_decode((string) file_get_contents($breakdownPath), true) ?: [];
+        $remakeBrief = (string) ($project->topic_or_brief ?: $project->title);
+        $analysisResult = $geminiService->analyzeReaVideoShots($breakdownData, $remakeBrief, $project->id);
+
+        // Bổ sung thông tin giải mã AI (shot_type, camera_angle, lighting, reverse_engineered_prompt) vào breakdown.json
+        $scenesByOrder = [];
+        foreach ((array) ($analysisResult['scenes'] ?? []) as $sceneItem) {
+            $order = (int) ($sceneItem['scene_order'] ?? 0);
+            if ($order > 0) {
+                $scenesByOrder[$order] = $sceneItem;
+            }
+        }
+
+        foreach ($breakdownData['shots'] ?? [] as $idx => $shot) {
+            $order = (int) ($shot['shot_index'] ?? ($idx + 1));
+            if (isset($scenesByOrder[$order])) {
+                $breakdownData['shots'][$idx]['shot_type'] = $scenesByOrder[$order]['shot_type'] ?? 'ai_video';
+                $breakdownData['shots'][$idx]['camera_angle'] = $scenesByOrder[$order]['camera_angle'] ?? '';
+                $breakdownData['shots'][$idx]['lighting_and_color'] = $scenesByOrder[$order]['lighting_and_color'] ?? '';
+                $breakdownData['shots'][$idx]['reverse_prompt'] = $scenesByOrder[$order]['visual_prompt'] ?? '';
+                $breakdownData['shots'][$idx]['remake_narration'] = $scenesByOrder[$order]['narration_text'] ?? '';
+            }
+        }
+
+        file_put_contents(
+            $breakdownPath,
+            json_encode($breakdownData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+
+        return $analysisResult;
     }
 
     /**

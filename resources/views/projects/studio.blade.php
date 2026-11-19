@@ -226,6 +226,52 @@
     </div>
 
     <!-- =================================================================== -->
+    <!-- 2B. BÁO CÁO GIẢI MÃ TỪNG SHOT (REA-VIDEO SHOT-BY-SHOT BREAKDOWN)    -->
+    <!-- =================================================================== -->
+    <template x-if="reaVideoReport && reaVideoReport.shots && reaVideoReport.shots.length > 0">
+        <div class="bg-slate-900/90 border border-amber-500/30 rounded-2xl p-5 shadow-xl space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            Rea-Video Breakdown
+                        </span>
+                        <span class="text-xs font-mono text-slate-400"
+                              x-text="(reaVideoReport.meta?.width || 720) + 'x' + (reaVideoReport.meta?.height || 1280) + ' • ' + (reaVideoReport.meta?.duration_sec || 0) + 's • ' + reaVideoReport.shots.length + ' shots'">
+                        </span>
+                    </div>
+                    <h3 class="text-sm font-semibold text-white mt-1">Hồ Sơ Giải Mã Từng Shot Từ Video Gốc</h3>
+                </div>
+                <template x-if="reaVideoReport.video_md_url">
+                    <a :href="reaVideoReport.video_md_url" target="_blank"
+                       class="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-xs font-semibold text-amber-300 transition">
+                        Xem VIDEO.md
+                    </a>
+                </template>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <template x-for="shot in reaVideoReport.shots" :key="shot.shot_index">
+                    <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-mono font-bold text-amber-300" x-text="'SHOT #' + shot.shot_index"></span>
+                            <span class="font-mono text-slate-400" x-text="(shot.start_ms/1000).toFixed(1) + 's → ' + (shot.end_ms/1000).toFixed(1) + 's (' + (shot.duration_ms/1000).toFixed(1) + 's)'"></span>
+                        </div>
+                        <template x-if="shot.first_frame_url">
+                            <img :src="shot.first_frame_url" class="w-full h-36 object-cover rounded-lg border border-slate-800" alt="Shot frame">
+                        </template>
+                        <div class="flex flex-wrap gap-1.5 text-[11px]">
+                            <span class="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-mono" x-text="shot.shot_type"></span>
+                            <span x-show="shot.camera_angle" class="px-2 py-0.5 rounded bg-slate-800 text-slate-300" x-text="shot.camera_angle"></span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 line-clamp-2" x-text="shot.reverse_prompt"></p>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <!-- =================================================================== -->
     <!-- 3. CỔNG KIỂM DUYỆT 1 (CP1): PHÊ DUYỆT SẢN PHẨM & MẪU 3D (.GLB)      -->
     <!-- =================================================================== -->
     <div x-show="project.status === 'waiting_approval_product' || (project.project_type === 'product' && activeInspectorTab === 'cp1')"
@@ -704,6 +750,7 @@ function studioController(initialData) {
         productProfile: initialData.product_profile,
         scenes: initialData.scenes || [],
         generationLogs: initialData.generation_logs || [],
+        reaVideoReport: initialData.rea_video_report || null,
         activeInspectorTab: 'cp1',
         isSubmitting: false,
         showCloneModal: false,
@@ -777,6 +824,7 @@ function studioController(initialData) {
                 this.project = data.project;
                 this.productProfile = data.product_profile;
                 this.generationLogs = data.generation_logs || [];
+                this.reaVideoReport = data.rea_video_report || null;
 
                 // Cập nhật danh sách scenes khi trạng thái chuyển đổi hoặc khi đang chờ kết xuất
                 if (previousStatus !== data.project.status || this.project.is_processing || this.regeneratingSceneId !== null) {
