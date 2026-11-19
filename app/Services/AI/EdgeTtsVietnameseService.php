@@ -72,6 +72,7 @@ class EdgeTtsVietnameseService
         ?int $storyboardSceneId = null
     ): array {
         $cleanText = trim(preg_replace('/\s+/', ' ', $text) ?? $text);
+        $cleanText = trim(preg_replace('/\s+([,\.\!\?;:])/u', '$1', $cleanText) ?? $cleanText);
         if ($cleanText === '') {
             throw new RuntimeException('Nội dung câu thoại tiếng Việt không được để trống.');
         }
@@ -166,6 +167,11 @@ class EdgeTtsVietnameseService
             }
         } finally {
             @unlink($tempTextPath);
+        }
+
+        // Dự phòng cuối cùng cùng giới tính (tránh sập luồng khi WebSocket Microsoft Edge-TTS tạm thời quá tải)
+        if (! $synthesized) {
+            $synthesized = $this->synthesizeSameGenderBackup($cleanText, $selectedVoice, $audioFullPath);
         }
 
         if (! $synthesized) {
@@ -289,6 +295,74 @@ class EdgeTtsVietnameseService
                 @unlink($f);
             }
             @rmdir($tempDir);
+        }
+    }
+
+    /**
+     * Bộ dự phòng cùng giới tính khi Microsoft Edge-TTS WebSocket tạm thời gián đoạn (`NoAudioReceived`).
+     * Giữ nguyên giới tính giọng đọc đã chọn (Nữ: giữ nguyên Google `tl=vi`; Nam: hạ cao độ FFmpeg khớp giọng Nam).
+     */
+    private function synthesizeSameGenderBackup(string $text, string $selectedVoice, string $audioFullPath): bool
+    {
+        try {
+            $words = preg_split('/\s+/u', $text) ?: [];
+            $chunks = [];
+            $current = '';
+
+            foreach ($words as $word) {
+                if (mb_strlen($current . ' ' . $word) > 165 && $current !== '') {
+                    $chunks[] = trim($current);
+                    $current = $word;
+                } else {
+                    $current .= ($current === '' ? '' : ' ') . $word;
+                }
+            }
+            if (trim($current) !== '') {
+                $chunks[] = trim($current);
+            }
+
+            $mp3Bytes = '';
+            foreach ($chunks as $chunk) {
+                $url = 'https://translate.google.com/translate_tts?' . http_build_query([
+                    'ie' => 'UTF-8',
+                    'tl' => 'vi',
+                    'client' => 'tw-ob',
+                    'q' => $chunk,
+                ]);
+
+                $response = \Illuminate\Support\Facades\Http::timeout(12)
+                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                    ->withHeaders(['User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'])
+                    ->get($url);
+
+                if ($response->successful() && strlen($response->body()) > 256) {
+                    $mp3Bytes .= $response->body();
+                }
+            }
+
+            if (strlen($mp3Bytes) <= 256) {
+                return false;
+            }
+
+            if ($selectedVoice === self::VOICE_MALE) {
+                $rawPath = $audioFullPath . '.raw_backup.mp3';
+                file_put_contents($rawPath, $mp3Bytes);
+                $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
+                $proc = new Process([
+                    $ffmpegBin, '-y', '-threads', '2', '-i', $rawPath,
+                    '-af', 'asetrate=24000*0.84,aresample=24000,atempo=1.19',
+                    '-c:a', 'libmp3lame', '-q:a', '3', $audioFullPath,
+                ]);
+                $proc->setTimeout(30);
+                $proc->run();
+                @unlink($rawPath);
+            } else {
+                file_put_contents($audioFullPath, $mp3Bytes);
+            }
+
+            return is_file($audioFullPath) && filesize($audioFullPath) > 256;
+        } catch (Throwable) {
+            return false;
         }
     }
 
