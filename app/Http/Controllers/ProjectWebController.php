@@ -105,6 +105,8 @@ class ProjectWebController extends Controller
             'depth_mm' => ['required_if:project_type,product', 'nullable', 'numeric', 'min:1', 'max:50000'],
             'product_images' => ['required_if:project_type,product', 'nullable', 'array', 'min:1'],
             'product_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:15360'],
+            'pr_product_images' => ['nullable', 'array'],
+            'pr_product_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:15360'],
         ]);
 
         $isCloneReference = $validated['project_type'] === 'clone_reference';
@@ -207,6 +209,35 @@ class ProjectWebController extends Controller
                     'original_image_paths' => $uploadedPaths,
                     'cache_key' => $cacheKey,
                 ]);
+            } elseif ($request->hasFile('pr_product_images')) {
+                // Nếu người dùng tải ảnh sản phẩm thực tế trong Tab 1 hoặc Tab 3 để làm Video PR gắn giỏ hàng
+                $prPaths = [];
+                $firstHash = 'pr_seed';
+                /** @var array<int, UploadedFile> $prFiles */
+                $prFiles = $request->file('pr_product_images', []);
+                foreach ($prFiles as $idx => $file) {
+                    $storedPath = $file->store("products/originals/project_{$project->id}", 'public');
+                    if ($storedPath !== false) {
+                        $prPaths[] = $storedPath;
+                        if ($idx === 0) {
+                            $fullFile = Storage::disk('public')->path($storedPath);
+                            $firstHash = is_file($fullFile) ? (md5_file($fullFile) ?: 'pr_seed') : 'pr_seed';
+                        }
+                    }
+                }
+
+                if ($prPaths !== []) {
+                    ProductProfile::query()->create([
+                        'video_project_id' => $project->id,
+                        'product_name' => (string) $validated['title'],
+                        'product_description' => $topicOrBrief,
+                        'width_mm' => 100.0,
+                        'height_mm' => 150.0,
+                        'depth_mm' => 60.0,
+                        'original_image_paths' => $prPaths,
+                        'cache_key' => ProductProfile::generateCacheKey((string) $validated['title'], $firstHash . '_p' . $project->id, 100.0, 150.0, 60.0),
+                    ]);
+                }
             }
 
             return $project;

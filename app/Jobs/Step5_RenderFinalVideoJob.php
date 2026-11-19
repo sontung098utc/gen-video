@@ -84,10 +84,15 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
                 }
 
                 $sceneVideoPaths[] = $disk->path($scene->video_file_path);
-                $transitionTypes[] = $scene->transition_type ?: 'fade';
+                $rawTransition = strtolower(trim((string) $scene->transition_type));
+                if ($rawTransition === '' || $rawTransition === 'fade') {
+                    $dynamicTransitions = ['smoothleft', 'wipeleft', 'circleopen', 'dissolve', 'smoothright'];
+                    $rawTransition = $dynamicTransitions[($scene->scene_order - 1) % count($dynamicTransitions)];
+                }
+                $transitionTypes[] = $rawTransition;
                 $voiceFilePaths[] = $disk->path($scene->voice_file_path);
 
-                // Định vị hiệu ứng âm thanh SFX (-6dB) tại điểm bắt đầu / chuyển cảnh của mỗi phân cảnh
+                // Định vị hiệu ứng âm thanh SFX (+3dB) khớp đúng điểm chuyển cảnh xfade
                 $sfxFilePath = $scene->sfx_file_path;
                 if ($sfxFilePath === null || ! is_file($sfxFilePath)) {
                     $defaultSfxName = ($scene->scene_order % 2 === 0) ? 'pop.mp3' : 'whoosh.mp3';
@@ -100,7 +105,7 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
                 if ($sfxFilePath !== null && is_file($sfxFilePath)) {
                     $sfxTimeline[] = [
                         'file_path' => $sfxFilePath,
-                        'start_ms' => $runningOffsetMs,
+                        'start_ms' => $runningOffsetMs > 250 ? ($runningOffsetMs - 250) : $runningOffsetMs,
                     ];
                 }
 
@@ -162,7 +167,7 @@ class Step5_RenderFinalVideoJob implements ShouldQueue
                 sceneVideoPaths: $sceneVideoPaths,
                 transitionTypes: $transitionTypes,
                 outputVideoPath: $stitchedVideoPath,
-                transitionDurationSec: 0.500
+                transitionDurationSec: 0.650
             );
 
             // 3. Ghép nối trục giọng đọc tiếng Việt và trộn đa lớp âm thanh (Voice 0dB + SFX -6dB + BGM -18dB sidechain ducking)

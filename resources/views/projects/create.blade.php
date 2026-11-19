@@ -16,6 +16,7 @@
         heightMm: {{ (float) old('height_mm', 145) }},
         depthMm: {{ (float) old('depth_mm', 45) }},
         selectedFilesCount: 0,
+        selectedPrFilesCount: 0,
         selectedRefVideoName: '',
         estimatedCostUsd() {
             if (this.renderEngine === 'motion_graphics' || this.renderEngine === 'money_printer_stock') {
@@ -141,6 +142,32 @@
                               placeholder="Nhập chủ đề, ý tưởng chính, các gạch đầu dòng hoặc đối tượng người xem mục tiêu..."
                               class="w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">{{ old('topic_or_brief') }}</textarea>
                 </div>
+            </div>
+
+            <!-- ẢNH SẢN PHẨM THỰC TẾ TÙY CHỌN CHO VIDEO PR GẮN GIỎ HÀNG (TAB 1 & TAB 3) -->
+            <div x-show="activeTab !== 'product'" x-cloak class="p-4 rounded-xl bg-slate-950/70 border border-emerald-500/30 space-y-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-emerald-300">
+                        Ảnh Sản Phẩm Thực Tế (Nếu là Video PR Gắn Giỏ Hàng TikTok — Tùy chọn)
+                    </span>
+                    <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">
+                        Chống trùng lặp nội dung 100%
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400">
+                    Nếu bạn tải lên ảnh sản phẩm thật tại đây, hệ thống sẽ <strong>tự động khóa không lấy video stock miễn phí trên mạng</strong> mà dựng trực tiếp ảnh sản phẩm của bạn với hiệu ứng 60fps &amp; đồ họa PR.
+                </p>
+                <label class="flex items-center justify-between border border-dashed border-emerald-500/40 hover:border-emerald-400 rounded-xl px-4 py-3 cursor-pointer bg-slate-900/60 transition">
+                    <span class="text-xs font-medium text-slate-200"
+                          x-text="selectedPrFilesCount > 0 ? ('Đã chọn ' + selectedPrFilesCount + ' ảnh sản phẩm thực tế') : 'Bấm để chọn ảnh sản phẩm thực tế (JPG / PNG / WebP)'"></span>
+                    <span class="text-xs text-emerald-400 font-semibold">Chọn ảnh</span>
+                    <input type="file"
+                           name="pr_product_images[]"
+                           multiple
+                           accept="image/jpeg,image/png,image/webp"
+                           @change="selectedPrFilesCount = $event.target.files.length; if (selectedPrFilesCount > 0 && renderEngine === 'money_printer_stock') { renderEngine = 'motion_graphics'; }"
+                           class="hidden">
+                </label>
             </div>
 
             <!-- NỘI DUNG RIÊNG TAB 3: CLONE / LÀM LẠI VIDEO MẪU (.MP4) -->
@@ -339,7 +366,7 @@
                             class="w-full p-3 rounded-xl border text-left flex items-center justify-between transition">
                         <div>
                             <div class="font-semibold text-sm text-amber-300">MoneyPrinterTurbo — Video Stock Thật ($0.00 / video)</div>
-                            <div class="text-xs text-slate-400">Tự động tìm Video Stock HD từ Pexels / Pixabay khớp từng câu thoại + FFmpeg 60fps</div>
+                            <div class="text-xs text-slate-400">Chỉ dùng cho Video Kiến Thức thuần túy (tự động tắt khi có ảnh SP để tránh trùng lặp TikTok)</div>
                         </div>
                         <span class="font-mono text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-300">$0.000</span>
                     </button>

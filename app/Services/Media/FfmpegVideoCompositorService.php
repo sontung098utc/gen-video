@@ -51,6 +51,85 @@ class FfmpegVideoCompositorService
     }
 
     /**
+     * Dựng clip giới thiệu Sản Phẩm Thực Tế 60fps (Anti-Duplication cho TikTok Shop, $0.00):
+     * Tạo nền studio mờ sang trọng từ chính ảnh sản phẩm + đặt ảnh sản phẩm sắc nét ở trung tâm
+     * kèm chuyển động zoom/pan mượt mà 60fps — 100% nguyên bản, không dùng video stock trùng lặp.
+     */
+    public function generateProductShowcaseClip(
+        string $productImagePath,
+        int $durationMs,
+        string $outputPath,
+        string $aspectRatio = '9:16',
+        string $cameraMotion = 'zoom_in'
+    ): bool {
+        if (! is_file($productImagePath)) {
+            throw new RuntimeException("Không tìm thấy ảnh sản phẩm thực tế: {$productImagePath}");
+        }
+
+        $this->ensureParentDirectory($outputPath);
+
+        $fps = 60;
+        $durationSeconds = max(1.0, round($durationMs / 1000.0, 3));
+        $totalFrames = max(60, (int) ceil($durationSeconds * $fps));
+        [$targetW, $targetH] = $aspectRatio === '16:9' ? [1920, 1080] : [1080, 1920];
+        $fgSize = $aspectRatio === '16:9' ? '900x900' : '920x1200';
+
+        // Tạo chuyển động Ken Burns nhẹ trên ảnh sản phẩm ở tiền cảnh, ghép lên nền studio mờ (boxblur)
+        $fgScaleExpr = match ($cameraMotion) {
+            'zoom_out' => "scale=1200:-1,zoompan=z='if(eq(on,1),1.18,max(1.0,zoom-0.0005))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={$totalFrames}:s={$fgSize}:fps={$fps}",
+            'pan_right' => "scale=1200:-1,zoompan=z='1.12':x='(iw-iw/zoom)*(on/{$totalFrames})':y='(ih-ih/zoom)/2':d={$totalFrames}:s={$fgSize}:fps={$fps}",
+            'pan_left' => "scale=1200:-1,zoompan=z='1.12':x='(iw-iw/zoom)*(1-on/{$totalFrames})':y='(ih-ih/zoom)/2':d={$totalFrames}:s={$fgSize}:fps={$fps}",
+            default => "scale=1200:-1,zoompan=z='min(zoom+0.0005,1.18)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={$totalFrames}:s={$fgSize}:fps={$fps}",
+        };
+
+        $filterComplex = sprintf(
+            '[0:v]scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,boxblur=24:4,eq=brightness=-0.18:saturation=1.15[bg];' .
+            '[0:v]%s,format=yuva420p[fg];' .
+            '[bg][fg]overlay=(W-w)/2:(H-h)/2-60:shortest=1,fps=%d,setsar=1,format=yuv420p[outv]',
+            $targetW,
+            $targetH,
+            $targetW,
+            $targetH,
+            $fgScaleExpr,
+            $fps
+        );
+
+        $args = [
+            '-y',
+            '-threads',
+            (string) $this->maxThreads,
+            '-loop',
+            '1',
+            '-i',
+            $productImagePath,
+            '-filter_complex',
+            $filterComplex,
+            '-map',
+            '[outv]',
+            '-t',
+            number_format($durationSeconds, 3, '.', ''),
+            '-r',
+            (string) $fps,
+            '-c:v',
+            'libx264',
+            '-preset',
+            'veryfast',
+            '-crf',
+            '21',
+            '-x264-params',
+            "threads={$this->maxThreads}",
+            '-pix_fmt',
+            'yuv420p',
+            '-an',
+            $outputPath,
+        ];
+
+        $this->runFfmpegProcess($args, 300);
+
+        return is_file($outputPath) && filesize($outputPath) > 0;
+    }
+
+    /**
      * Phục vụ chế độ `Eco Mode`: Chuyển 1 ảnh tĩnh AI thành video chuyển động 60fps mượt mà (Ken Burns)
      * sử dụng filter `zoompan` (upscale 4320px chống giật pixel) khớp chính xác với thời lượng câu đọc ($durationMs).
      *
@@ -383,13 +462,13 @@ class FfmpegVideoCompositorService
                 '[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0dB,apad=whole_dur=%.3f,asplit=2[vo_main][vo_sc]',
                 $videoDurationSec
             );
-            // 2. Luồng nhạc nền BGM (-18dB) + sidechaincompress (Audio Ducking tự động hạ âm lượng khi có giọng đọc tiếng Việt)
+            // 2. Luồng nhạc nền BGM (-14dB) + sidechaincompress (Audio Ducking tự động hạ âm lượng khi có giọng đọc tiếng Việt)
             $filterParts[] = sprintf(
-                '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,atrim=0:%.3f,asetpts=PTS-STARTPTS,volume=-18dB[bgm_base]',
+                '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,atrim=0:%.3f,asetpts=PTS-STARTPTS,volume=-14dB[bgm_base]',
                 $bgmInputIndex,
                 $videoDurationSec
             );
-            $filterParts[] = '[bgm_base][vo_sc]sidechaincompress=threshold=0.08:ratio=4:attack=45:release=400:makeup=2[bgm_ducked]';
+            $filterParts[] = '[bgm_base][vo_sc]sidechaincompress=threshold=0.05:ratio=4:attack=35:release=350:makeup=2[bgm_ducked]';
         } else {
             $filterParts[] = sprintf(
                 '[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0dB,apad=whole_dur=%.3f[vo_main]',
@@ -397,13 +476,13 @@ class FfmpegVideoCompositorService
             );
         }
 
-        // 3. Các luồng hiệu ứng âm thanh SFX (-6dB) đặt đúng timestamp bằng adelay
+        // 3. Các luồng hiệu ứng âm thanh SFX (+3dB) đặt đúng timestamp chuyển cảnh bằng adelay
         $sfxLabels = [];
         foreach ($validSfxItems as $idx => $sfxMeta) {
             $label = "[sfx_{$idx}]";
             $delayMs = $sfxMeta['start_ms'];
             $filterParts[] = sprintf(
-                '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=-6dB,adelay=%d|%d%s',
+                '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=+3dB,adelay=%d|%d%s',
                 $sfxMeta['input_index'],
                 $delayMs,
                 $delayMs,

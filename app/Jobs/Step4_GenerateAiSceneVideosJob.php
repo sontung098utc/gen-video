@@ -81,6 +81,20 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
                 );
             }
 
+            // Lấy danh sách ảnh sản phẩm thực tế (nếu có) để chèn vào Video PR (tuyệt đối không dùng Stock miễn phí)
+            $realProductImages = [];
+            if ($project->productProfile !== null) {
+                if (! empty($project->productProfile->nobg_image_path) && $disk->exists($project->productProfile->nobg_image_path)) {
+                    $realProductImages[] = $disk->path($project->productProfile->nobg_image_path);
+                }
+                foreach ((array) ($project->productProfile->original_image_paths ?? []) as $origRel) {
+                    if (is_string($origRel) && $disk->exists($origRel)) {
+                        $realProductImages[] = $disk->path($origRel);
+                    }
+                }
+            }
+            $hasRealProduct = $realProductImages !== [] || $project->project_type === ProjectType::PRODUCT;
+
             /** @var StoryboardScene $scene */
             foreach ($scenes as $index => $scene) {
                 $fullPrompt = $masterStyle !== ''
@@ -109,8 +123,47 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
                     continue;
                 }
 
-                // Nếu dự án bật chế độ MoneyPrinterTurbo (Video Stock Pexels/Pixabay miễn phí $0.00)
-                if ($stockVideoService->shouldUseStockVideo($project)) {
+                // CHỐNG TRÙNG LẶP TIKTOK SHOP: Nếu là Video PR có ảnh sản phẩm thực tế, TUYỆT ĐỐI không dùng Stock miễn phí!
+                // Luân phiên hiển thị Ảnh Sản Phẩm Thực Tế 60fps + Thẻ Thông Số Sản Phẩm Motion Graphics ($0.00)
+                if ($hasRealProduct && $realProductImages !== [] && $project->cost_tier_mode === CostTierMode::ECO_MODE) {
+                    if ($index % 3 === 1 && ! $motionGraphicsService->shouldUseMotionGraphics($project, $scene)) {
+                        // Cảnh xen kẽ dùng thẻ thông số sản phẩm Hypit (có ảnh sản phẩm + USP)
+                        $this->renderMotionGraphicsScene(
+                            motionGraphicsService: $motionGraphicsService,
+                            project: $project,
+                            scene: $scene,
+                            filePrefix: $filePrefix,
+                            durationMs: $durationMs,
+                            disk: $disk
+                        );
+                        continue;
+                    }
+
+                    $pickedProductImg = $realProductImages[$index % count($realProductImages)];
+                    $videoRelativePath = "renders/{$filePrefix}_product60fps.mp4";
+                    $videoFullPath = $disk->path($videoRelativePath);
+
+                    $ffmpegCompositor->generateProductShowcaseClip(
+                        productImagePath: $pickedProductImg,
+                        durationMs: $durationMs,
+                        outputPath: $videoFullPath,
+                        aspectRatio: $project->aspect_ratio,
+                        cameraMotion: $scene->camera_motion
+                    );
+
+                    // Lưu ảnh đại diện cho Cổng 4
+                    $thumbRel = "renders/{$filePrefix}_product_thumb.jpg";
+                    @copy($pickedProductImg, $disk->path($thumbRel));
+
+                    $scene->update([
+                        'image_file_path' => $thumbRel,
+                        'video_file_path' => $videoRelativePath,
+                    ]);
+                    continue;
+                }
+
+                // Nếu dự án bật chế độ MoneyPrinterTurbo (chỉ dành cho Video Kiến Thức thuần túy, không phải PR Sản Phẩm)
+                if (! $hasRealProduct && $stockVideoService->shouldUseStockVideo($project)) {
                     try {
                         $stockClip = $stockVideoService->fetchAndPrepareSceneClip(
                             project: $project,
