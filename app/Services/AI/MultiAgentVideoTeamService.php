@@ -187,7 +187,7 @@ Nhiệm vụ: Nhận kịch bản từ AI #2 và thiết kế hình ảnh minh h
 QUY TẮC:
 1. Tạo `master_style_prompt` bằng tiếng Anh định hình phong cách đồng nhất toàn video.
 2. Với mỗi phân cảnh trong `scenes`:
-   - `stock_search_terms`: Đúng 2-3 từ khóa tiếng Anh CỤ THỂ, ĐỜI THƯỜNG để tìm Video Stock thật trên Pexels/Pixabay (VD: "elderly man drinking water", "doctor checking blood sugar", "senior foot pain"). TUYỆT ĐỐI không dùng từ trừu tượng như "conceptual 3D".
+   - `stock_search_terms`: Đúng 2-3 từ khóa tiếng Anh MÔ TẢ HÀNH ĐỘNG/ĐỒ VẬT CỤ THỂ để tìm Video Stock trên Pexels (VD: "drinking glass water", "bathroom weight scale", "blood glucose meter", "doctor stethoscope hospital", "tired eyes rubbing"). TUYỆT ĐỐI KHÔNG dùng tính từ chung chung như "middle aged asian", "adult looking", "person hand small".
    - `prompt_kit`: Tách 3 lớp (`subject_anchor`, `shot_composition`, `lighting_setting`) mô tả cảnh quay chân thực để tạo ảnh AI/video AI.
    - `visual_prompt`: Ghép hoàn chỉnh bằng tiếng Anh (bắt đầu bằng từ khóa mô tả cảnh quay + chi tiết).
 
@@ -276,13 +276,13 @@ PROMPT;
 
         $approved = $this->invokeRoleJson($systemPrompt, [['text' => $userPrompt]], 'ai_role_manager_qa', $videoProjectId);
 
-        // Đảm bảo trường visual_prompt luôn ưu tiên ghép thêm stock_search_terms để Pexels tìm chính xác
+        // Đảm bảo trường visual_prompt luôn ưu tiên gắn thẻ [stock: ...] để MoneyPrinterTurbo tìm đúng clip 100%
         if (! empty($approved['scenes']) && is_array($approved['scenes'])) {
             foreach ($approved['scenes'] as $idx => $scene) {
                 $terms = trim((string) ($scene['stock_search_terms'] ?? ''));
                 $visual = trim((string) ($scene['visual_prompt'] ?? ''));
-                if ($terms !== '' && ! str_contains(strtolower($visual), strtolower($terms))) {
-                    $approved['scenes'][$idx]['visual_prompt'] = "{$terms}, {$visual}";
+                if ($terms !== '' && ! str_contains(strtolower($visual), '[stock:')) {
+                    $approved['scenes'][$idx]['visual_prompt'] = "[stock: {$terms}] {$visual}";
                 }
             }
         }

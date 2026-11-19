@@ -492,6 +492,11 @@ PROMPT;
                 }
             }
 
+            $stockTerms = trim((string) ($scene['stock_search_terms'] ?? ''));
+            if ($stockTerms !== '' && ! str_contains(strtolower((string) ($scene['visual_prompt'] ?? '')), '[stock:')) {
+                $scene['visual_prompt'] = "[stock: {$stockTerms}] " . trim((string) ($scene['visual_prompt'] ?? ''));
+            }
+
             $decoded['scenes'][$index] = $scene;
         }
 

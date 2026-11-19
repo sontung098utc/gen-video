@@ -301,7 +301,8 @@ class EdgeTtsVietnameseService
             return;
         }
 
-        $phrases = array_chunk($words, 6);
+        // Chia thành các cụm ngắn 4 từ để hiển thị phụ đề 1-2 dòng gọn gàng trên khung dọc 9:16
+        $phrases = array_chunk($words, 4);
         $phraseCount = count($phrases);
         $msPerPhrase = (int) floor($durationMs / $phraseCount);
 

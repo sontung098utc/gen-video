@@ -140,9 +140,17 @@ class MoneyPrinterStockVideoService
 
     /**
      * Rút trích 2–4 từ khóa tiếng Anh trọng tâm từ `visual_prompt` để tìm Video Stock chính xác nhất.
+     * Ưu tiên đọc thẻ `[stock: ...]` do AI #3 (Visual Director) chỉ định.
      */
     public function extractSearchKeywords(string $visualPrompt, string $fallbackTitle = 'nature technology'): string
     {
+        if (preg_match('/\[stock:\s*([^\]]+)\]/i', $visualPrompt, $matches) === 1) {
+            $explicit = trim($matches[1]);
+            if ($explicit !== '') {
+                return $explicit;
+            }
+        }
+
         $clean = preg_replace('/\[[^\]]+\]/', '', $visualPrompt) ?? $visualPrompt;
         $clean = strtolower(preg_replace('/[^a-zA-Z0-9\s]/', ' ', $clean) ?? '');
 
@@ -190,8 +198,29 @@ class MoneyPrinterStockVideoService
                 return null;
             }
 
-            $pickedVideo = $videos[$sceneOrder % count($videos)];
-            $files = (array) ($pickedVideo['video_files'] ?? []);
+            // Chấm điểm mức độ khớp từ khóa dựa trên URL slug mô tả của Pexels (VD: .../woman-drinking-water-12345/)
+            $queryTokens = array_values(array_filter(
+                preg_split('/\s+/', strtolower($query)) ?: [],
+                static fn (string $t): bool => strlen($t) >= 3
+            ));
+
+            $bestVideo = $videos[0];
+            $bestScore = -1;
+            foreach ($videos as $video) {
+                $slug = strtolower((string) ($video['url'] ?? ''));
+                $score = 0;
+                foreach ($queryTokens as $token) {
+                    if (str_contains($slug, $token)) {
+                        $score += 10;
+                    }
+                }
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $bestVideo = $video;
+                }
+            }
+
+            $files = (array) ($bestVideo['video_files'] ?? []);
 
             // Ưu tiên file MP4 có chiều rộng >= 720 và <= 1920
             usort($files, static fn (array $a, array $b): int => ((int) ($b['width'] ?? 0)) <=> ((int) ($a['width'] ?? 0)));
