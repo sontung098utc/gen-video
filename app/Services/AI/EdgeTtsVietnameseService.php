@@ -436,17 +436,62 @@ class EdgeTtsVietnameseService
         if (is_file($vttFullPath) && filesize($vttFullPath) > 0) {
             $rawContent = (string) file_get_contents($vttFullPath);
             if (trim($rawContent) !== '') {
-                // Nếu edge-tts v7 xuất định dạng SRT (dùng dấu phẩy cho mili-giây), chuyển sang chuẩn WebVTT
-                if (! str_starts_with(ltrim($rawContent), 'WEBVTT')) {
-                    $vttContent = preg_replace('/(\d{2}:\d{2}:\d{2}),(\d{3})/', '$1.$2', $rawContent) ?? $rawContent;
-                    file_put_contents($vttFullPath, "WEBVTT\n\n" . ltrim($vttContent));
-                }
+                // Nếu edge-tts v7 xuất 1 cue quá dài (> 5 từ), chia lại thành cụm 4 từ gọn gàng cho khung dọc 9:16
+                if (! $this->hasOversizedSubtitleCue($rawContent, 5)) {
+                    // Nếu edge-tts v7 xuất định dạng SRT (dùng dấu phẩy cho mili-giây), chuyển sang chuẩn WebVTT
+                    if (! str_starts_with(ltrim($rawContent), 'WEBVTT')) {
+                        $vttContent = preg_replace('/(\d{2}:\d{2}:\d{2}),(\d{3})/', '$1.$2', $rawContent) ?? $rawContent;
+                        file_put_contents($vttFullPath, "WEBVTT\n\n" . ltrim($vttContent));
+                    }
 
-                return;
+                    return;
+                }
             }
         }
 
         $this->generateWordLevelVttFromText($text, $durationMs, $vttFullPath);
+    }
+
+    /**
+     * Kiểm tra xem file SRT/VTT có cue nào vượt quá số từ tối đa cho phép hay không.
+     */
+    private function hasOversizedSubtitleCue(string $rawContent, int $maxWordsPerCue): bool
+    {
+        $blocks = preg_split('/\R{2,}/', trim($rawContent)) ?: [];
+        $cueCount = 0;
+
+        foreach ($blocks as $block) {
+            $lines = array_values(array_filter(
+                array_map('trim', preg_split('/\R/', $block) ?: []),
+                static fn (string $line): bool => $line !== '' && $line !== 'WEBVTT'
+            ));
+
+            $textLines = [];
+            $hasTimestamp = false;
+
+            foreach ($lines as $line) {
+                if (str_contains($line, '-->')) {
+                    $hasTimestamp = true;
+                    continue;
+                }
+                if (! $hasTimestamp && ctype_digit($line)) {
+                    continue;
+                }
+                if ($hasTimestamp) {
+                    $textLines[] = $line;
+                }
+            }
+
+            if ($hasTimestamp && $textLines !== []) {
+                $cueCount++;
+                $words = preg_split('/\s+/u', trim(implode(' ', $textLines))) ?: [];
+                if (count($words) > $maxWordsPerCue) {
+                    return true;
+                }
+            }
+        }
+
+        return $cueCount === 0;
     }
 
     /**

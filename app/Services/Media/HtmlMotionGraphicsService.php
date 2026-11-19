@@ -242,7 +242,11 @@ class HtmlMotionGraphicsService
         ?string $preferredTemplate = null
     ): array {
         $template = $preferredTemplate ?? $this->extractPreferredTemplate($project, $scene);
-        $narration = trim((string) $scene->narration_text);
+        $narration = trim((string) preg_replace(
+            '/\s+/u',
+            ' ',
+            (string) preg_replace('/@\{[a-zA-Z0-9_:\-]+\}/u', '', (string) $scene->narration_text)
+        ));
         $visual = trim((string) preg_replace('/\[[^\]]+\]/', '', (string) $scene->visual_prompt));
         $lowerContext = mb_strtolower($narration . ' ' . $visual);
         $sceneLabel = sprintf('CẢNH %02d', max(1, (int) $scene->scene_order));
@@ -311,7 +315,7 @@ class HtmlMotionGraphicsService
                     'handle' => '@review_thucte',
                     'replyLabel' => 'Trả lời bình luận',
                     'text' => $narration !== '' ? Str::limit($narration, 140) : $project->title,
-                    'subtitle' => $visual !== '' ? Str::limit($visual, 120) : '',
+                    'subtitle' => '',
                 ],
             ];
         }
@@ -321,8 +325,8 @@ class HtmlMotionGraphicsService
             'data' => [
                 'sceneLabel' => $sceneLabel,
                 'title' => $project->title !== '' ? Str::limit($project->title, 70) : 'Điểm Nhấn Nội Dung',
-                'subtitle' => $narration !== '' ? $narration : $visual,
-                'tags' => ['EcoMotion', '60FPS', 'HD'],
+                'subtitle' => $narration !== '' ? $narration : Str::limit($project->title, 120),
+                'tags' => [],
             ],
         ];
     }
