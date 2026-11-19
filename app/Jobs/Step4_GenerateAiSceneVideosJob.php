@@ -90,6 +90,25 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
                 $filePrefix = sprintf('project_%d_scene_%02d_%d', $project->id, $scene->scene_order, time());
                 $durationMs = $scene->duration_ms > 0 ? $scene->duration_ms : 5000;
 
+                // Nếu dự án Clone Video Mẫu chọn giữ nguyên cảnh quay gốc & Việt hóa giọng đọc + phụ đề
+                if (
+                    str_contains(strtolower($masterStyle), '[keep_reference_visuals]')
+                    && preg_match('/\[reference_video:([^\]]+)\]/', $masterStyle, $refMatch) === 1
+                    && $disk->exists(trim($refMatch[1]))
+                ) {
+                    $this->sliceReferenceVideoForScene(
+                        refVideoFullPath: $disk->path(trim($refMatch[1])),
+                        sceneIndex: $index,
+                        totalScenes: max(1, $scenes->count()),
+                        durationMs: $durationMs,
+                        aspectRatio: $project->aspect_ratio,
+                        filePrefix: $filePrefix,
+                        scene: $scene,
+                        disk: $disk
+                    );
+                    continue;
+                }
+
                 // Nếu dự án bật chế độ MoneyPrinterTurbo (Video Stock Pexels/Pixabay miễn phí $0.00)
                 if ($stockVideoService->shouldUseStockVideo($project)) {
                     try {
@@ -238,6 +257,73 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
             }
             throw $e;
         }
+    }
+
+    /**
+     * Cắt phân đoạn tương ứng từ Video Mẫu (.mp4), chuẩn hóa 60fps vừa khít `$durationMs` của giọng đọc tiếng Việt mới.
+     */
+    private function sliceReferenceVideoForScene(
+        string $refVideoFullPath,
+        int $sceneIndex,
+        int $totalScenes,
+        int $durationMs,
+        string $aspectRatio,
+        string $filePrefix,
+        StoryboardScene $scene,
+        Filesystem $disk
+    ): void {
+        $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
+        $ffprobeBin = (string) config('services.ffmpeg.ffprobe_binary', '/usr/local/bin/ffprobe');
+        $maxThreads = max(1, min(6, (int) config('services.ffmpeg.max_threads', 6)));
+        $nicePriority = (int) config('services.ffmpeg.nice_priority', 10);
+
+        $probe = new \Symfony\Component\Process\Process([
+            $ffprobeBin, '-v', 'error', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', $refVideoFullPath,
+        ]);
+        $probe->setTimeout(15);
+        $probe->run();
+        $refDuration = $probe->isSuccessful() ? max(2.0, (float) trim($probe->getOutput())) : 15.0;
+
+        $startSec = round(($refDuration * $sceneIndex) / max(1, $totalScenes), 3);
+        $targetSec = max(1.0, round($durationMs / 1000.0, 3));
+        [$w, $h] = $aspectRatio === '16:9' ? [1920, 1080] : [1080, 1920];
+
+        $videoRelativePath = "renders/{$filePrefix}_refclip60fps.mp4";
+        $videoFullPath = $disk->path($videoRelativePath);
+        if (! is_dir(dirname($videoFullPath))) {
+            mkdir(dirname($videoFullPath), 0775, true);
+        }
+
+        $vf = sprintf('scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,fps=60,setsar=1,format=yuv420p', $w, $h, $w, $h);
+        $args = [
+            '-y', '-threads', (string) $maxThreads,
+            '-ss', (string) $startSec,
+            '-stream_loop', '-1',
+            '-i', $refVideoFullPath,
+            '-t', number_format($targetSec, 3, '.', ''),
+            '-vf', $vf,
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21',
+            '-x264-params', "threads={$maxThreads}",
+            '-an', $videoFullPath,
+        ];
+        $cmd = PHP_OS_FAMILY === 'Linux' ? array_merge(['nice', '-n', (string) $nicePriority, $ffmpegBin], $args) : array_merge([$ffmpegBin], $args);
+        $proc = new \Symfony\Component\Process\Process($cmd);
+        $proc->setTimeout(180);
+        $proc->run();
+
+        $imageRelativePath = "renders/{$filePrefix}_ref_thumb.jpg";
+        $imageFullPath = $disk->path($imageRelativePath);
+        $thumbProc = new \Symfony\Component\Process\Process([
+            $ffmpegBin, '-y', '-threads', '2', '-ss', '0.3', '-i', $videoFullPath, '-frames:v', '1', '-q:v', '3', $imageFullPath,
+        ]);
+        $thumbProc->setTimeout(20);
+        $thumbProc->run();
+
+        $scene->update([
+            'image_file_path' => is_file($imageFullPath) ? $imageRelativePath : null,
+            'video_file_path' => $videoRelativePath,
+        ]);
     }
 
     /**

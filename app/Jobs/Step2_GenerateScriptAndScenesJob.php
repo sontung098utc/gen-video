@@ -73,7 +73,7 @@ class Step2_GenerateScriptAndScenesJob implements ShouldQueue
             DB::transaction(function () use ($project, $analysisResult, $scenesData): void {
                 // Bảo toàn các thẻ cấu hình Hypit ([motion_graphics], [template:...], [subtitle:...]) đã chọn khi tạo dự án
                 $existingTags = [];
-                if (preg_match_all('/\[(?:motion_graphics|money_printer_stock|template:[a-z_]+|subtitle:[a-z_]+|reference_video:[^\]]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
+                if (preg_match_all('/\[(?:motion_graphics|money_printer_stock|keep_reference_visuals|template:[a-z_]+|subtitle:[a-z_]+|reference_video:[^\]]+)\]/i', (string) $project->master_style_prompt, $tagMatches)) {
                     $existingTags = array_unique($tagMatches[0]);
                 }
                 $generatedStyle = trim((string) ($analysisResult['master_style_prompt'] ?? $project->master_style_prompt));

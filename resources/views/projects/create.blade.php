@@ -171,9 +171,20 @@
                         Yêu cầu thay đổi / chủ đề mới khi làm lại (Tùy chọn)
                     </label>
                     <textarea name="remake_instructions"
-                              rows="4"
+                              rows="3"
                               placeholder="VD: Giữ nguyên nhịp chuyển cảnh nhanh và cấu trúc Hook 3 giây đầu như video mẫu, nhưng viết lại nội dung tiếng Việt về chủ đề 'Top 4 sản phẩm chăm sóc da bán chạy nhất' hoặc 'Review máy lọc không khí'..."
                               class="w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500">{{ old('remake_instructions') }}</textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+                        Nguồn hình ảnh cho bản Video Mới
+                    </label>
+                    <select name="ref_visual_mode"
+                            class="w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-500">
+                        <option value="replace_with_engine">Tạo cảnh quay mới hoàn toàn (theo chế độ MoneyPrinter Stock / Motion Graphics / AI ở mục 3)</option>
+                        <option value="keep_reference_clips">Giữ nguyên cảnh quay của Video Mẫu & Việt hóa 100% (Thay giọng đọc Edge-TTS + Phụ đề + BGM)</option>
+                    </select>
                 </div>
             </div>
 

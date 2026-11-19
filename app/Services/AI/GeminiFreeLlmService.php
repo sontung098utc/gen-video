@@ -180,8 +180,11 @@ PROMPT;
     }
 
     /**
-     * Phân tích đa phương thức Video mẫu (.mp4/.mov/.webm) bằng cách trích xuất các khung hình tiêu biểu qua FFmpeg
-     * và dùng Gemini Multimodal để clone cấu trúc viral, nhịp cắt, góc máy & viết lại kịch bản tiếng Việt mới.
+     * Phân tích đa phương thức Video mẫu (.mp4/.mov/.webm):
+     *  1. Tách các điểm cắt cảnh thực tế (scene cuts) & thời lượng từng cảnh bằng FFmpeg (-threads 6).
+     *  2. Trích xuất khung hình đại diện từng cảnh + luồng âm thanh gốc (.mp3) của video mẫu.
+     *  3. Giao cho Đội ngũ 4 AI (`MultiAgentVideoTeamService::produceReferenceRemakeWithFourAgents`) nghe audio gốc,
+     *     xem khung hình từng cảnh và viết lại kịch bản Remake tiếng Việt khớp nhịp cắt + từ khóa Video Stock Pexels.
      *
      * @return array<string, mixed>
      */
@@ -190,98 +193,63 @@ PROMPT;
         string $remakeInstructions = '',
         ?int $videoProjectId = null
     ): array {
-        $systemPrompt = <<<'PROMPT'
-Bạn là Đạo diễn Clone Video Viral (lấy cảm hứng từ Hypit SVML) trên TikTok / Reels / YouTube Shorts.
-Dựa trên các khung hình trích xuất theo trình tự thời gian từ Video mẫu và yêu cầu làm lại (nếu có), hãy:
-1. Giải mã cấu trúc viral của video mẫu (Hook 3 giây đầu, nhịp độ, góc máy, bố cục chữ/đồ họa, chuyển cảnh).
-2. Tái tạo thành kịch bản video mới hoàn chỉnh bằng tiếng Việt (4-6 phân cảnh), giữ nguyên nhịp hấp dẫn của bản gốc nhưng áp dụng đúng chủ đề/sản phẩm người dùng yêu cầu.
-3. Trong `tagged_narration` và `narration_text`, chèn các thẻ neo từ khóa (`@{pop}`, `@{whoosh}`, `@{sparkle}`, `@{zoom}`, `@{sticker}`) ngay trước từ cần nhấn mạnh.
-4. Mỗi phân cảnh có `prompt_kit` tách lớp (`subject_anchor`, `shot_composition`, `lighting_setting`) để giữ đồng nhất phong cách.
-
-YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG JSON TRẢ VỀ:
-{
-  "title": "Tiêu đề video mới hấp dẫn bằng tiếng Việt",
-  "master_style_prompt": "Mô tả phong cách thị giác tổng thể bằng tiếng Anh dựa trên video mẫu",
-  "recommended_bgm_mood": "upbeat_modern",
-  "scenes": [
-    {
-      "scene_order": 1,
-      "narration_text": "Lời thoại tiếng Việt (có thể kèm thẻ @{pop}, @{whoosh} trước từ khóa)",
-      "tagged_narration": "Lời thoại tiếng Việt kèm thẻ @{pop}, @{whoosh}",
-      "prompt_kit": {
-        "subject_anchor": "Mô tả chủ thể chính",
-        "shot_composition": "Bố cục & góc máy tương ứng video mẫu",
-        "lighting_setting": "Ánh sáng & bối cảnh"
-      },
-      "visual_prompt": "Prompt tiếng Anh đầy đủ ghép từ prompt_kit",
-      "sfx_prompt": "whoosh_fast",
-      "camera_motion": "zoom_in | zoom_out | pan_right | pan_left",
-      "transition_type": "fade | smoothleft | wipeleft | circleopen | dissolve"
-    }
-  ]
-}
-PROMPT;
-
         $instructions = trim($remakeInstructions) !== ''
             ? trim($remakeInstructions)
             : 'Giữ nguyên cấu trúc Hook, nhịp chuyển cảnh và phong cách thị giác của video mẫu, chuyển thể lời thoại tiếng Việt tự nhiên và cuốn hút.';
 
-        $parts = [[
-            'text' => sprintf("YÊU CẦU LÀM LẠI VIDEO MẪU:\n\"%s\"\nHãy phân tích các khung hình đính kèm và xuất JSON.", $instructions),
-        ]];
-
-        // Trích xuất tối đa 5 khung hình đại diện từ video mẫu bằng FFmpeg (-threads 6)
-        $extractedFrames = $this->extractReferenceVideoFrames($videoPath, 5);
-        foreach ($extractedFrames as $framePath) {
-            $rawBytes = @file_get_contents($framePath);
-            if ($rawBytes !== false && $rawBytes !== '') {
-                $parts[] = [
-                    'inline_data' => [
-                        'mime_type' => 'image/jpeg',
-                        'data' => base64_encode($rawBytes),
-                    ],
-                ];
-            }
-            @unlink($framePath);
-        }
+        $extracted = $this->extractReferenceShotsAndAudio($videoPath, 6);
+        $shots = $extracted['shots'];
+        $audioPath = $extracted['audio_path'];
 
         try {
-            $result = $this->callGeminiJsonEndpoint(
-                systemPrompt: $systemPrompt,
-                userParts: $parts,
-                actionType: 'analyze_reference_video',
-                videoProjectId: $videoProjectId,
-                sanitizedRequestMeta: [
-                    'video_file' => basename($videoPath),
-                    'remake_instructions' => $instructions,
-                    'frames_extracted' => count($extractedFrames),
-                ]
+            $result = app(MultiAgentVideoTeamService::class)->produceReferenceRemakeWithFourAgents(
+                shots: $shots,
+                audioPath: $audioPath,
+                remakeInstructions: $instructions,
+                videoProjectId: $videoProjectId
             );
 
             return $this->normalizeScenePromptKits($result);
         } catch (Throwable $e) {
+            if (str_contains($e->getMessage(), 'HTTP 401') || str_contains($e->getMessage(), 'HTTP 403') || str_contains($e->getMessage(), 'UNAUTHENTICATED')) {
+                throw new RuntimeException(
+                    'Lỗi xác thực GEMINI_API_KEY (401/403): Vui lòng kiểm tra khóa Gemini API trong .env. Chi tiết: ' . $e->getMessage(),
+                    0,
+                    $e
+                );
+            }
+
             Log::warning('[GeminiFreeLlmService] Chuyển sang Smart Local Fallback cho analyzeReferenceVideo: ' . $e->getMessage());
 
             return $this->buildFallbackKnowledgeScript($instructions, $videoProjectId, $e->getMessage());
+        } finally {
+            foreach ($shots as $s) {
+                if (! empty($s['frame_path'])) {
+                    @unlink((string) $s['frame_path']);
+                }
+            }
+            if ($audioPath !== null) {
+                @unlink($audioPath);
+            }
         }
     }
 
     /**
-     * Trích xuất các khung hình JPEG đại diện từ video mẫu bằng FFmpeg (giới hạn luồng -threads 6).
+     * Tách các điểm cắt cảnh (scene cuts) + khung hình đại diện + âm thanh gốc (.mp3) từ video mẫu bằng FFmpeg.
      *
-     * @return array<int, string>
+     * @return array{shots: array<int, array{shot_index: int, start_ms: int, end_ms: int, duration_ms: int, frame_path: string}>, audio_path: string|null}
      */
-    private function extractReferenceVideoFrames(string $videoPath, int $maxFrames = 5): array
+    private function extractReferenceShotsAndAudio(string $videoPath, int $maxShots = 6): array
     {
         if (! is_file($videoPath)) {
-            return [];
+            return ['shots' => [], 'audio_path' => null];
         }
 
         $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
         $ffprobeBin = (string) config('services.ffmpeg.ffprobe_binary', '/usr/local/bin/ffprobe');
         $maxThreads = max(1, min(6, (int) config('services.ffmpeg.max_threads', 6)));
 
-        $durationSec = 10.0;
+        $durationSec = 15.0;
         $probeProc = new \Symfony\Component\Process\Process([
             $ffprobeBin,
             '-v',
@@ -301,27 +269,77 @@ PROMPT;
             }
         }
 
+        // Phát hiện các điểm cắt cảnh thực tế bằng bộ lọc scene của FFmpeg
+        $sceneArgs = [
+            '-y',
+            '-threads',
+            (string) $maxThreads,
+            '-i',
+            $videoPath,
+            '-vf',
+            "select='gt(scene,0.28)',showinfo",
+            '-f',
+            'null',
+            '-',
+        ];
+        $sceneCmd = PHP_OS_FAMILY === 'Linux'
+            ? array_merge(['nice', '-n', '10', $ffmpegBin], $sceneArgs)
+            : array_merge([$ffmpegBin], $sceneArgs);
+        $sceneProc = new \Symfony\Component\Process\Process($sceneCmd);
+        $sceneProc->setTimeout(60);
+        $sceneProc->run();
+
+        $cuts = [0.0];
+        if (preg_match_all('/pts_time:([0-9]+(?:\.[0-9]+)?)/', $sceneProc->getErrorOutput(), $matches)) {
+            foreach ($matches[1] as $rawTime) {
+                $t = round((float) $rawTime, 2);
+                if ($t - end($cuts) >= 1.2 && ($durationSec - $t) >= 1.0) {
+                    $cuts[] = $t;
+                }
+            }
+        }
+
+        if (count($cuts) < 3) {
+            $cuts = [];
+            $targetCount = max(4, min($maxShots, (int) round($durationSec / 4.0)));
+            for ($i = 0; $i < $targetCount; $i++) {
+                $cuts[] = round(($durationSec * $i) / $targetCount, 2);
+            }
+        } elseif (count($cuts) > $maxShots) {
+            $step = count($cuts) / $maxShots;
+            $sampled = [];
+            for ($i = 0; $i < $maxShots; $i++) {
+                $sampled[] = $cuts[(int) floor($i * $step)];
+            }
+            $sampled[0] = 0.0;
+            $cuts = array_values(array_unique($sampled));
+        }
+
         $tempDir = storage_path('app/temp/ref_frames_' . uniqid());
         if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 
-        $frames = [];
-        for ($i = 0; $i < $maxFrames; $i++) {
-            $timestamp = round(($durationSec * ($i + 0.5)) / $maxFrames, 2);
-            $outPath = "{$tempDir}/frame_{$i}.jpg";
+        $shots = [];
+        $countCuts = count($cuts);
+        for ($i = 0; $i < $countCuts; $i++) {
+            $startSec = $cuts[$i];
+            $endSec = ($i + 1 < $countCuts) ? $cuts[$i + 1] : $durationSec;
+            $midSec = round($startSec + (($endSec - $startSec) * 0.4), 2);
+            $outPath = "{$tempDir}/shot_{$i}.jpg";
+
             $args = [
                 '-y',
                 '-threads',
                 (string) $maxThreads,
                 '-ss',
-                (string) $timestamp,
+                (string) $midSec,
                 '-i',
                 $videoPath,
                 '-frames:v',
                 '1',
                 '-vf',
-                'scale=640:-1',
+                'scale=480:-1',
                 '-q:v',
                 '4',
                 $outPath,
@@ -329,17 +347,51 @@ PROMPT;
             $cmd = PHP_OS_FAMILY === 'Linux'
                 ? array_merge(['nice', '-n', '10', $ffmpegBin], $args)
                 : array_merge([$ffmpegBin], $args);
-
             $proc = new \Symfony\Component\Process\Process($cmd);
             $proc->setTimeout(20);
             $proc->run();
 
             if (is_file($outPath) && filesize($outPath) > 0) {
-                $frames[] = $outPath;
+                $shots[] = [
+                    'shot_index' => $i + 1,
+                    'start_ms' => (int) round($startSec * 1000),
+                    'end_ms' => (int) round($endSec * 1000),
+                    'duration_ms' => max(1500, (int) round(($endSec - $startSec) * 1000)),
+                    'frame_path' => $outPath,
+                ];
             }
         }
 
-        return $frames;
+        // Trích xuất âm thanh gốc (tối đa 45 giây, 32kbps mono) để Gemini nghe trực tiếp giọng & Hook của video mẫu
+        $audioPath = "{$tempDir}/ref_audio.mp3";
+        $audioArgs = [
+            '-y',
+            '-threads',
+            '2',
+            '-i',
+            $videoPath,
+            '-t',
+            '45',
+            '-vn',
+            '-ac',
+            '1',
+            '-ar',
+            '16000',
+            '-b:a',
+            '32k',
+            $audioPath,
+        ];
+        $audioCmd = PHP_OS_FAMILY === 'Linux'
+            ? array_merge(['nice', '-n', '10', $ffmpegBin], $audioArgs)
+            : array_merge([$ffmpegBin], $audioArgs);
+        $audioProc = new \Symfony\Component\Process\Process($audioCmd);
+        $audioProc->setTimeout(25);
+        $audioProc->run();
+
+        return [
+            'shots' => $shots,
+            'audio_path' => (is_file($audioPath) && filesize($audioPath) > 256) ? $audioPath : null,
+        ];
     }
 
     /**

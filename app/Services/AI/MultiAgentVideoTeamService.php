@@ -94,6 +94,139 @@ class MultiAgentVideoTeamService
     }
 
     /**
+     * Điều phối 4 vai trò AI để Clone & Làm Lại Video từ Video Mẫu (nghe audio gốc + xem khung hình từng cảnh).
+     *
+     * @param  array<int, array{shot_index: int, duration_ms: int, frame_path: string}>  $shots
+     * @return array<string, mixed>
+     */
+    public function produceReferenceRemakeWithFourAgents(
+        array $shots,
+        ?string $audioPath,
+        string $remakeInstructions,
+        ?int $videoProjectId = null
+    ): array {
+        if ($this->apiKey === '') {
+            throw new RuntimeException('Thiếu GEMINI_API_KEY trong file .env. Vui lòng cập nhật khóa Gemini API hợp lệ.');
+        }
+
+        // AI #2 nghe audio gốc + xem ảnh các cảnh mẫu để bóc tách cấu trúc viral và viết lại kịch bản mới
+        $scriptDraft = $this->runReferenceScriptwriterAgent(
+            shots: $shots,
+            audioPath: $audioPath,
+            remakeInstructions: $remakeInstructions,
+            videoProjectId: $videoProjectId
+        );
+
+        // AI #3 thiết kế từ khóa Pexels Stock + Prompt tách lớp khớp với từng cảnh mẫu
+        $visualPlan = $this->runVisualDirectorAgent(
+            mode: 'reference_remake',
+            scriptDraft: $scriptDraft,
+            videoProjectId: $videoProjectId
+        );
+
+        // AI #4 gán nhịp chuyển cảnh, camera motion, SFX và thẻ neo từ khóa
+        $editedPlan = $this->runEditorEffectsAgent(
+            visualPlan: $visualPlan,
+            videoProjectId: $videoProjectId
+        );
+
+        // AI #1 (Manager QA) duyệt lại toàn bộ bản Remake
+        return $this->runManagerQaAgent(
+            mode: 'reference_remake',
+            topicOrDescription: $remakeInstructions,
+            editedPlan: $editedPlan,
+            videoProjectId: $videoProjectId
+        );
+    }
+
+    /**
+     * AI #2 (Chế độ Clone Video Mẫu): Nghe âm thanh gốc & xem khung hình các cảnh của video mẫu để tái tạo kịch bản mới.
+     *
+     * @param  array<int, array{shot_index: int, duration_ms: int, frame_path: string}>  $shots
+     * @return array<string, mixed>
+     */
+    private function runReferenceScriptwriterAgent(
+        array $shots,
+        ?string $audioPath,
+        string $remakeInstructions,
+        ?int $videoProjectId
+    ): array {
+        $systemPrompt = <<<'PROMPT'
+Bạn là AI #2 — CHUYÊN GIA CLONE & REMAKE VIDEO VIRAL (lấy cảm hứng từ hypit-ai/hypit & capsule-cinema).
+Bạn được cung cấp:
+1. File âm thanh gốc của Video mẫu (nếu có) để nghe chính xác giọng điệu, Hook, cách dẫn dắt và nhịp nói.
+2. Các khung hình tách theo từng cảnh thực tế của Video mẫu kèm thời lượng mili-giây (`duration_ms`) mỗi cảnh.
+3. Yêu cầu làm lại (chủ đề/sản phẩm mới) của người dùng.
+
+NHIỆM VỤ:
+- Giải mã cấu trúc thành công của video mẫu (Hook 3s đầu, cách giữ nhịp ở giữa, cách chốt CTA).
+- Viết lại thành kịch bản tiếng Việt MỚI HOÀN TOÀN theo yêu cầu người dùng, giữ nguyên số lượng cảnh và độ dài lời thoại vừa khớp từng `duration_ms` của video mẫu (khoảng 2.5 - 3 từ mỗi giây).
+- CẤM văn mẫu sáo rỗng ("Bạn đã bao giờ tự hỏi...", "Thực tế cho thấy...").
+
+TRẢ VỀ JSON:
+{
+  "title": "Tiêu đề video Remake tiếng Việt cuốn hút",
+  "hook_strategy": "Tóm tắt cấu trúc Hook học được từ video mẫu",
+  "scenes": [
+    {
+      "scene_order": 1,
+      "role_in_funnel": "hook | body | proof | cta",
+      "narration_text": "Lời thoại tiếng Việt mới khớp nhịp cảnh mẫu"
+    }
+  ]
+}
+PROMPT;
+
+        $shotLines = [];
+        foreach ($shots as $s) {
+            $shotLines[] = sprintf('- Cảnh #%d: thời lượng ~%dms', $s['shot_index'], $s['duration_ms']);
+        }
+
+        $instructions = trim($remakeInstructions) !== ''
+            ? trim($remakeInstructions)
+            : 'Giữ nguyên cấu trúc Hook, nhịp chuyển cảnh và phong cách truyền đạt của video mẫu; chuyển thể sang lời thoại tiếng Việt tự nhiên, sắc bén.';
+
+        $userText = sprintf(
+            "CẤU TRÚC CẢNH CỦA VIDEO MẪU (%d cảnh):\n%s\n\nYÊU CẦU NỘI DUNG MỚI:\n\"%s\"\n\nHãy nghe âm thanh & xem các khung hình đính kèm rồi xuất JSON đúng %d cảnh.",
+            count($shots),
+            implode("\n", $shotLines),
+            $instructions,
+            count($shots)
+        );
+
+        $parts = [['text' => $userText]];
+
+        if ($audioPath !== null && is_file($audioPath) && filesize($audioPath) > 256) {
+            $audioBytes = @file_get_contents($audioPath);
+            if ($audioBytes !== false && $audioBytes !== '') {
+                $parts[] = [
+                    'inline_data' => [
+                        'mime_type' => 'audio/mp3',
+                        'data' => base64_encode($audioBytes),
+                    ],
+                ];
+            }
+        }
+
+        foreach (array_slice($shots, 0, 8) as $s) {
+            $framePath = (string) ($s['frame_path'] ?? '');
+            if ($framePath !== '' && is_file($framePath) && is_readable($framePath)) {
+                $imgBytes = @file_get_contents($framePath);
+                if ($imgBytes !== false && $imgBytes !== '') {
+                    $parts[] = [
+                        'inline_data' => [
+                            'mime_type' => 'image/jpeg',
+                            'data' => base64_encode($imgBytes),
+                        ],
+                    ];
+                }
+            }
+        }
+
+        return $this->invokeRoleJson($systemPrompt, $parts, 'ai_role_ref_scriptwriter', $videoProjectId);
+    }
+
+    /**
      * AI #2: Chuyên gia chuyên môn + Marketing viết kịch bản TikTok/Reels thực chiến (Hook - Insight - Giải pháp - CTA).
      *
      * @param  array<int, string>  $imagePaths

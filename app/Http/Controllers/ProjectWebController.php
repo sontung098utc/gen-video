@@ -85,6 +85,7 @@ class ProjectWebController extends Controller
             'title' => ['required', 'string', 'max:255'],
             'topic_or_brief' => ['nullable', 'string', 'max:5000'],
             'remake_instructions' => ['nullable', 'string', 'max:5000'],
+            'ref_visual_mode' => ['nullable', 'string', 'in:replace_with_engine,keep_reference_clips'],
             'reference_video' => ['required_if:project_type,clone_reference', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:102400'],
             'aspect_ratio' => ['required', 'string', 'in:9:16,16:9'],
             'cost_tier_mode' => ['required', 'string', 'in:eco_mode,full_ai_video_mode'],
@@ -150,6 +151,9 @@ class ProjectWebController extends Controller
                     $storedRefPath = $refFile->store("references/project_{$project->id}", 'public');
                     if ($storedRefPath !== false) {
                         $styleTags[] = "[reference_video:{$storedRefPath}]";
+                        if (($validated['ref_visual_mode'] ?? 'replace_with_engine') === 'keep_reference_clips') {
+                            $styleTags[] = '[keep_reference_visuals]';
+                        }
                         $project->update([
                             'master_style_prompt' => implode(' ', $styleTags),
                         ]);
