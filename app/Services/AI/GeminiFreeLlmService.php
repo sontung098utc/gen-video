@@ -48,47 +48,26 @@ class GeminiFreeLlmService
      */
     public function analyzeKnowledgeTopic(string $topic, ?int $videoProjectId = null): array
     {
-        $systemPrompt = <<<'PROMPT'
-Bạn là Đạo diễn Video Ngắn AI (TikTok / YouTube Shorts / Reels) hàng đầu tại Việt Nam.
-Nhiệm vụ của bạn là biến chủ đề kiến thức người dùng cung cấp thành kịch bản video ngắn cuốn hút (từ 4 đến 6 phân cảnh, tổng thời lượng khoảng 25-45 giây).
-
-YÊU CẦU BẮT BUỘC VỀ ĐỊNH DẠNG JSON TRẢ VỀ:
-{
-  "title": "Tiêu đề video tiếng Việt giật tít, hấp dẫn",
-  "master_style_prompt": "Mô tả phong cách nghệ thuật tổng thể bằng tiếng Anh (VD: Cinematic 8k photorealistic lighting, shallow depth of field, warm color grading, Unreal Engine 5 render style)",
-  "recommended_bgm_mood": "Tâm trạng nhạc nền phù hợp (VD: inspiring_tech, dramatic_cinematic, upbeat_modern)",
-  "scenes": [
-    {
-      "scene_order": 1,
-      "narration_text": "Lời thoại tiếng Việt tự nhiên, súc tích (15-28 từ mỗi cảnh). Có thể chèn tối đa 1-2 thẻ neo từ khóa tùy chọn như @{whoosh}, @{pop}, @{sparkle}, @{zoom}, @{sticker} ngay trước từ khóa đắt giá để đồng bộ SFX/hiệu ứng.",
-      "prompt_kit": {
-        "subject_anchor": "Mô tả chi tiết chủ thể chính, chất liệu, hành động bằng tiếng Anh",
-        "shot_composition": "Góc máy, bố cục khung hình, ống kính bằng tiếng Anh (VD: medium close-up shot, eye-level, rule of thirds)",
-        "lighting_setting": "Ánh sáng, màu sắc, bối cảnh không gian bằng tiếng Anh (VD: warm golden rim lighting, futuristic studio background, 8k photorealistic)"
-      },
-      "visual_prompt": "Prompt tiếng Anh hoàn chỉnh tổng hợp từ prompt_kit để đưa vào Flux Schnell hoặc LTX-Video",
-      "sfx_prompt": "Từ khóa hiệu ứng âm thanh ngắn gọn bằng tiếng Anh (VD: whoosh_fast, keyboard_typing, sparkle_chime)",
-      "camera_motion": "Một trong các giá trị: zoom_in, zoom_out, pan_right, pan_left",
-      "transition_type": "Một trong các giá trị: fade, smoothleft, wipeleft, circleopen, dissolve"
-    }
-  ]
-}
-PROMPT;
-
-        $userPrompt = sprintf(
-            "Hãy xây dựng kịch bản video ngắn chi tiết cho chủ đề sau:\n\"%s\"",
-            trim($topic)
-        );
-
         try {
-            return $this->callGeminiJsonEndpoint(
-                systemPrompt: $systemPrompt,
-                userParts: [['text' => $userPrompt]],
-                actionType: 'analyze_topic',
-                videoProjectId: $videoProjectId,
-                sanitizedRequestMeta: ['topic' => $topic]
+            $result = app(MultiAgentVideoTeamService::class)->produceWithFourAgents(
+                mode: 'knowledge',
+                topicOrDescription: $topic,
+                imagePaths: [],
+                dimensions: [],
+                videoProjectId: $videoProjectId
             );
+
+            return $this->normalizeScenePromptKits($result);
         } catch (Throwable $e) {
+            // Không âm thầm fallback sang văn mẫu nếu GEMINI_API_KEY bị vô hiệu hóa (401/403)
+            if (str_contains($e->getMessage(), 'HTTP 401') || str_contains($e->getMessage(), 'HTTP 403') || str_contains($e->getMessage(), 'UNAUTHENTICATED')) {
+                throw new RuntimeException(
+                    'Lỗi xác thực GEMINI_API_KEY (401/403): Khóa API hiện tại đã bị vô hiệu hóa hoặc chưa hợp lệ. Vui lòng tạo API Key mới tại https://aistudio.google.com/apikey và cập nhật vào file .env. Chi tiết: ' . $e->getMessage(),
+                    0,
+                    $e
+                );
+            }
+
             Log::warning('[GeminiFreeLlmService] Chuyển sang Smart Local Fallback cho analyzeKnowledgeTopic: ' . $e->getMessage());
 
             return $this->buildFallbackKnowledgeScript($topic, $videoProjectId, $e->getMessage());
@@ -176,17 +155,24 @@ PROMPT;
         }
 
         try {
-            return $this->callGeminiJsonEndpoint(
-                systemPrompt: $systemPrompt,
-                userParts: $parts,
-                actionType: 'analyze_product',
-                videoProjectId: $videoProjectId,
-                sanitizedRequestMeta: [
-                    'description' => $description,
-                    'dimensions_mm' => ['width_mm' => $widthMm, 'height_mm' => $heightMm, 'depth_mm' => $depthMm],
-                ]
+            $result = app(MultiAgentVideoTeamService::class)->produceWithFourAgents(
+                mode: 'product',
+                topicOrDescription: $description,
+                imagePaths: $imagePaths,
+                dimensions: ['width_mm' => $widthMm, 'height_mm' => $heightMm, 'depth_mm' => $depthMm],
+                videoProjectId: $videoProjectId
             );
+
+            return $this->normalizeScenePromptKits($result);
         } catch (Throwable $e) {
+            if (str_contains($e->getMessage(), 'HTTP 401') || str_contains($e->getMessage(), 'HTTP 403') || str_contains($e->getMessage(), 'UNAUTHENTICATED')) {
+                throw new RuntimeException(
+                    'Lỗi xác thực GEMINI_API_KEY (401/403): Khóa API hiện tại đã bị vô hiệu hóa hoặc chưa hợp lệ. Vui lòng tạo API Key mới tại https://aistudio.google.com/apikey và cập nhật vào file .env. Chi tiết: ' . $e->getMessage(),
+                    0,
+                    $e
+                );
+            }
+
             Log::warning('[GeminiFreeLlmService] Chuyển sang Smart Local Fallback cho analyzeProduct: ' . $e->getMessage());
 
             return $this->buildFallbackProductAnalysis($description, $widthMm, $heightMm, $depthMm, $videoProjectId, $e->getMessage());
