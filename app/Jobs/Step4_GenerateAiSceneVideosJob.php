@@ -12,6 +12,7 @@ use App\Services\AI\FalLowCostService;
 use App\Services\Media\FfmpegVideoCompositorService;
 use App\Services\Media\HtmlMotionGraphicsService;
 use App\Services\Media\MoneyPrinterStockVideoService;
+use App\Services\Media\ThreeDVideoRendererService;
 use App\Services\Workflow\WorkflowOrchestrator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -57,6 +58,7 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
         FfmpegVideoCompositorService $ffmpegCompositor,
         HtmlMotionGraphicsService $motionGraphicsService,
         MoneyPrinterStockVideoService $stockVideoService,
+        ThreeDVideoRendererService $threeDRenderer,
         WorkflowOrchestrator $orchestrator
     ): void {
         $project = VideoProject::query()->with(['scenes', 'productProfile'])->findOrFail($this->videoProjectId);
@@ -123,43 +125,38 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
                     continue;
                 }
 
-                // CHỐNG TRÙNG LẶP TIKTOK SHOP: Nếu là Video PR có ảnh sản phẩm thực tế, TUYỆT ĐỐI không dùng Stock miễn phí!
-                // Luân phiên hiển thị Ảnh Sản Phẩm Thực Tế 60fps + Thẻ Thông Số Sản Phẩm Motion Graphics ($0.00)
-                if ($hasRealProduct && $realProductImages !== [] && $project->cost_tier_mode === CostTierMode::ECO_MODE) {
-                    if ($index % 3 === 1 && ! $motionGraphicsService->shouldUseMotionGraphics($project, $scene)) {
-                        // Cảnh xen kẽ dùng thẻ thông số sản phẩm Hypit (có ảnh sản phẩm + USP)
-                        $this->renderMotionGraphicsScene(
-                            motionGraphicsService: $motionGraphicsService,
+                // CHỐNG TRÙNG LẶP TIKTOK SHOP: Nếu là Video PR có mô hình 3D (.glb) / ảnh sản phẩm thực tế:
+                // Kết xuất Video 3D Xoay Đa Góc 60fps từ file .glb (chính xác hình ảnh, màu sắc, kích thước thật)
+                // xen kẽ với Thẻ Thông Số Sản Phẩm Motion Graphics ($0.00) — tuyệt đối không dùng ảnh tĩnh lặp lại hay Stock miễn phí!
+                if ($hasRealProduct && $project->cost_tier_mode === CostTierMode::ECO_MODE) {
+                    $glbRel = (string) ($project->productProfile?->normalized_glb_path ?? '');
+                    if ($glbRel !== '' && $disk->exists($glbRel)) {
+                        if ($index % 3 === 1) {
+                            $this->renderMotionGraphicsScene(
+                                motionGraphicsService: $motionGraphicsService,
+                                project: $project,
+                                scene: $scene,
+                                filePrefix: $filePrefix,
+                                durationMs: $durationMs,
+                                disk: $disk
+                            );
+                            continue;
+                        }
+
+                        $rendered3d = $threeDRenderer->renderSceneFromGlb(
+                            glbFullPath: $disk->path($glbRel),
                             project: $project,
                             scene: $scene,
                             filePrefix: $filePrefix,
-                            durationMs: $durationMs,
-                            disk: $disk
+                            durationMs: $durationMs
                         );
+
+                        $scene->update([
+                            'image_file_path' => $rendered3d['image_relative_path'],
+                            'video_file_path' => $rendered3d['video_relative_path'],
+                        ]);
                         continue;
                     }
-
-                    $pickedProductImg = $realProductImages[$index % count($realProductImages)];
-                    $videoRelativePath = "renders/{$filePrefix}_product60fps.mp4";
-                    $videoFullPath = $disk->path($videoRelativePath);
-
-                    $ffmpegCompositor->generateProductShowcaseClip(
-                        productImagePath: $pickedProductImg,
-                        durationMs: $durationMs,
-                        outputPath: $videoFullPath,
-                        aspectRatio: $project->aspect_ratio,
-                        cameraMotion: $scene->camera_motion
-                    );
-
-                    // Lưu ảnh đại diện cho Cổng 4
-                    $thumbRel = "renders/{$filePrefix}_product_thumb.jpg";
-                    @copy($pickedProductImg, $disk->path($thumbRel));
-
-                    $scene->update([
-                        'image_file_path' => $thumbRel,
-                        'video_file_path' => $videoRelativePath,
-                    ]);
-                    continue;
                 }
 
                 // Nếu dự án bật chế độ MoneyPrinterTurbo (chỉ dành cho Video Kiến Thức thuần túy, không phải PR Sản Phẩm)

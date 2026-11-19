@@ -105,6 +105,7 @@ class ProjectWebController extends Controller
             'depth_mm' => ['required_if:project_type,product', 'nullable', 'numeric', 'min:1', 'max:50000'],
             'product_images' => ['required_if:project_type,product', 'nullable', 'array', 'min:1'],
             'product_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:15360'],
+            'product_video' => ['nullable', 'file', 'mimes:mp4,mov,webm', 'max:102400'],
             'pr_product_images' => ['nullable', 'array'],
             'pr_product_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:15360'],
         ]);
@@ -176,6 +177,30 @@ class ProjectWebController extends Controller
                         if ($idx === 0) {
                             $fullFile = Storage::disk('public')->path($storedPath);
                             $firstFileHash = is_file($fullFile) ? (md5_file($fullFile) ?: 'seed') : 'seed';
+                        }
+                    }
+                }
+
+                // Nếu người dùng tải thêm Video sản phẩm, trích xuất 3 khung hình góc nhìn bằng FFmpeg bổ sung vào hồ sơ 3D
+                if ($request->hasFile('product_video')) {
+                    $prodVid = $request->file('product_video');
+                    if ($prodVid instanceof UploadedFile) {
+                        $vidPath = $prodVid->store("products/originals/project_{$project->id}", 'public');
+                        if ($vidPath !== false) {
+                            $fullVid = Storage::disk('public')->path($vidPath);
+                            $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', '/usr/local/bin/ffmpeg');
+                            foreach ([1.0, 3.0, 5.0] as $secIdx => $sec) {
+                                $frameRel = "products/originals/project_{$project->id}/vid_frame_{$secIdx}.jpg";
+                                $frameFull = Storage::disk('public')->path($frameRel);
+                                $proc = new \Symfony\Component\Process\Process([
+                                    $ffmpegBin, '-y', '-threads', '2', '-ss', (string) $sec, '-i', $fullVid, '-frames:v', '1', '-q:v', '3', $frameFull,
+                                ]);
+                                $proc->setTimeout(20);
+                                $proc->run();
+                                if (is_file($frameFull) && filesize($frameFull) > 0) {
+                                    $uploadedPaths[] = $frameRel;
+                                }
+                            }
                         }
                     }
                 }

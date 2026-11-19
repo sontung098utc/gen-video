@@ -284,25 +284,44 @@
                     </div>
                 </div>
 
-                <!-- Tải Lên Nhiều Ảnh Sản Phẩm -->
-                <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-                        Tải lên hình ảnh sản phẩm (JPG / PNG / WebP — Tự động tách nền bằng <code class="text-purple-400">rembg</code> CPU) <span class="text-rose-400">*</span>
-                    </label>
-                    <label class="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-purple-500 rounded-xl p-6 cursor-pointer bg-slate-950/60 transition">
-                        <svg class="w-8 h-8 text-purple-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                        </svg>
-                        <span class="text-sm font-medium text-slate-200">Bấm để chọn một hoặc nhiều ảnh sản phẩm</span>
-                        <span class="text-xs text-slate-500 mt-1" x-text="selectedFilesCount > 0 ? ('Đã chọn ' + selectedFilesCount + ' file ảnh') : 'Ảnh đầu tiên sẽ được dùng để tách nền PNG RGBA và dựng khối 3D .glb'"></span>
-                        <input type="file"
-                               name="product_images[]"
-                               multiple
-                               accept="image/jpeg,image/png,image/webp"
-                               :required="activeTab === 'product'"
-                               @change="selectedFilesCount = $event.target.files.length"
-                               class="hidden">
-                    </label>
+                <!-- Tải Lên Nhiều Ảnh & Video Sản Phẩm -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+                            Ảnh sản phẩm (JPG / PNG / WebP) <span class="text-rose-400">*</span>
+                        </label>
+                        <label class="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-purple-500 rounded-xl p-5 cursor-pointer bg-slate-950/60 transition">
+                            <svg class="w-7 h-7 text-purple-400 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                            <span class="text-xs font-medium text-slate-200 text-center">Chọn 1 hoặc nhiều ảnh sản phẩm</span>
+                            <span class="text-[11px] text-slate-500 mt-1 text-center" x-text="selectedFilesCount > 0 ? ('Đã chọn ' + selectedFilesCount + ' ảnh') : 'Tách nền & dựng 3D .glb'"></span>
+                            <input type="file"
+                                   name="product_images[]"
+                                   multiple
+                                   accept="image/jpeg,image/png,image/webp"
+                                   :required="activeTab === 'product'"
+                                   @change="selectedFilesCount = $event.target.files.length"
+                                   class="hidden">
+                        </label>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
+                            Video sản phẩm (MP4/MOV — Tùy chọn)
+                        </label>
+                        <label class="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-cyan-500 rounded-xl p-5 cursor-pointer bg-slate-950/60 transition">
+                            <svg class="w-7 h-7 text-cyan-400 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                            <span class="text-xs font-medium text-slate-200 text-center">Chọn video quay sản phẩm (.mp4)</span>
+                            <span class="text-[11px] text-slate-500 mt-1 text-center">Tự động trích khung hình học góc 3D</span>
+                            <input type="file"
+                                   name="product_video"
+                                   accept="video/mp4,video/quicktime,video/webm"
+                                   class="hidden">
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>

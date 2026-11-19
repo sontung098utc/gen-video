@@ -50,8 +50,8 @@ class Step1_AnalyzeProductAnd3DJob implements ShouldQueue
     ): void {
         $project = VideoProject::query()->with('productProfile')->findOrFail($this->videoProjectId);
 
-        // Nếu dự án là KNOWLEDGE (không phải PRODUCT), chuyển tiếp ngay sang bước tạo kịch bản
-        if ($project->project_type !== ProjectType::PRODUCT) {
+        // Nếu dự án không có hồ sơ sản phẩm (chỉ là KNOWLEDGE thuần túy), chuyển tiếp ngay sang bước tạo kịch bản
+        if ($project->project_type !== ProjectType::PRODUCT && $project->productProfile === null) {
             $orchestrator->dispatchNextStep($project);
 
             return;
@@ -138,15 +138,65 @@ class Step1_AnalyzeProductAnd3DJob implements ShouldQueue
 
             $profile->update(['nobg_image_path' => $nobgRelativePath]);
 
-            // 4. Gọi `FalLowCostService::generate3dModelWithTrellis()` ($0.02) tạo mô hình .glb thô
-            $trellisResult = $falService->generate3dModelWithTrellis(
-                imageUrlOrDataUri: $nobgFullPath,
-                outputFileName: "project_{$project->id}_raw",
-                videoProjectId: $project->id
-            );
+            // 4. Gọi `FalLowCostService::generate3dModelWithTrellis()` ($0.02) tạo mô hình .glb thô;
+            // nếu Fal.ai chưa nạp số dư -> tự động dựng mô hình 3D UV-Textured (.glb) chuẩn màu & kích thước thực từ ảnh sản phẩm ($0.00)
+            $rawGlbRelativePath = "models_3d/raw/project_{$project->id}_raw.glb";
+            $rawGlbFullPath = $disk->path($rawGlbRelativePath);
+            $usedLocalTextured3d = false;
 
-            $rawGlbFullPath = $trellisResult['glb_full_path'];
-            $profile->update(['raw_glb_path' => $trellisResult['glb_relative_path']]);
+            try {
+                $trellisResult = $falService->generate3dModelWithTrellis(
+                    imageUrlOrDataUri: $nobgFullPath,
+                    outputFileName: "project_{$project->id}_raw",
+                    videoProjectId: $project->id
+                );
+                $rawGlbRelativePath = $trellisResult['glb_relative_path'];
+                $rawGlbFullPath = $trellisResult['glb_full_path'];
+            } catch (Throwable $trellisErr) {
+                \Illuminate\Support\Facades\Log::warning('[Step1] Fal Trellis fallback sang generate_textured_3d_glb.py: ' . $trellisErr->getMessage());
+                $usedLocalTextured3d = true;
+                $gen3dProc = new Process(
+                    command: [
+                        $pythonBinary,
+                        base_path('scripts/generate_textured_3d_glb.py'),
+                        '--image',
+                        $nobgFullPath,
+                        '--output',
+                        $rawGlbFullPath,
+                        '--width-mm',
+                        (string) $profile->width_mm,
+                        '--height-mm',
+                        (string) $profile->height_mm,
+                        '--depth-mm',
+                        (string) $profile->depth_mm,
+                    ],
+                    env: [
+                        'OMP_NUM_THREADS' => $cpuThreads,
+                    ]
+                );
+                $gen3dProc->setTimeout(120);
+                $gen3dProc->run();
+
+                if (! $gen3dProc->isSuccessful() || ! is_file($rawGlbFullPath)) {
+                    throw new RuntimeException('Không thể tạo mô hình 3D .glb cục bộ: ' . trim($gen3dProc->getErrorOutput() ?: $gen3dProc->getOutput()));
+                }
+            }
+
+            $profile->update(['raw_glb_path' => $rawGlbRelativePath]);
+
+            // Nếu đã dựng bằng generate_textured_3d_glb.py thì file đã chuẩn 1 unit = 1m + giữ nguyên UV texture thật
+            if ($usedLocalTextured3d) {
+                $normRel = "models_3d/cache/project_{$project->id}_normalized.glb";
+                $normFull = $disk->path($normRel);
+                if (! is_dir(dirname($normFull))) {
+                    mkdir(dirname($normFull), 0775, true);
+                }
+                copy($rawGlbFullPath, $normFull);
+                $profile->update(['normalized_glb_path' => $normRel]);
+                $orchestrator->dispatchNextStep($project);
+
+                return;
+            }
 
             // 5. Chạy script `scripts/normalize_glb_scale.py` chuẩn hóa kích thước thực tế (mm -> m)
             // và chụp tự động 4 ảnh góc xoay Turntable (0°, 90°, 180°, 270°)
