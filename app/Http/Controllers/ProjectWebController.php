@@ -81,17 +81,14 @@ class ProjectWebController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'project_type' => ['required', 'string', 'in:knowledge,product,clone_reference,rea_video_remake'],
+            'project_type' => ['required', 'string', 'in:knowledge,product,clone_reference'],
             'title' => ['required', 'string', 'max:255'],
             'topic_or_brief' => ['nullable', 'string', 'max:5000'],
             'remake_instructions' => ['nullable', 'string', 'max:5000'],
             'reference_video' => ['required_if:project_type,clone_reference', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:102400'],
-            'rea_remake_brief' => ['nullable', 'string', 'max:5000'],
-            'rea_scene_threshold' => ['nullable', 'numeric', 'min:0.1', 'max:0.6'],
-            'rea_source_video' => ['required_if:project_type,rea_video_remake', 'nullable', 'file', 'mimes:mp4,mov,webm', 'max:102400'],
             'aspect_ratio' => ['required', 'string', 'in:9:16,16:9'],
             'cost_tier_mode' => ['required', 'string', 'in:eco_mode,full_ai_video_mode'],
-            'render_engine' => ['nullable', 'string', 'in:ai_fal,motion_graphics'],
+            'render_engine' => ['nullable', 'string', 'in:ai_fal,motion_graphics,money_printer_stock'],
             'motion_template' => ['nullable', 'string', 'in:auto,comment_sticker,ranking_board,product_spec,box_caption'],
             'subtitle_style' => ['nullable', 'string', 'in:karaoke,karaoke_box'],
             'workflow_mode' => ['required', 'string', 'in:step_by_step,auto'],
@@ -110,16 +107,16 @@ class ProjectWebController extends Controller
         ]);
 
         $isCloneReference = $validated['project_type'] === 'clone_reference';
-        $isReaVideoRemake = $validated['project_type'] === 'rea_video_remake';
-        $projectType = ($isCloneReference || $isReaVideoRemake)
-            ? ProjectType::KNOWLEDGE
-            : ProjectType::from($validated['project_type']);
+        $projectType = $isCloneReference ? ProjectType::KNOWLEDGE : ProjectType::from($validated['project_type']);
 
-        $project = DB::transaction(function () use ($request, $validated, $projectType, $isCloneReference, $isReaVideoRemake): VideoProject {
+        $project = DB::transaction(function () use ($request, $validated, $projectType, $isCloneReference): VideoProject {
             $selectedVoice = (string) ($validated['voice_name'] ?? $validated['voice_id'] ?? 'vi-VN-NamMinhNeural');
             $styleTags = [];
-            if (($validated['render_engine'] ?? 'ai_fal') === 'motion_graphics') {
+            $engine = (string) ($validated['render_engine'] ?? 'ai_fal');
+            if ($engine === 'motion_graphics') {
                 $styleTags[] = '[motion_graphics]';
+            } elseif ($engine === 'money_printer_stock') {
+                $styleTags[] = '[money_printer_stock]';
             }
             $motionTemplate = (string) ($validated['motion_template'] ?? 'auto');
             if ($motionTemplate !== 'auto') {
@@ -130,13 +127,9 @@ class ProjectWebController extends Controller
                 $styleTags[] = '[subtitle:karaoke_box]';
             }
 
-            if ($isReaVideoRemake) {
-                $topicOrBrief = (string) ($validated['rea_remake_brief'] ?? $validated['title']);
-            } elseif ($isCloneReference) {
-                $topicOrBrief = (string) ($validated['remake_instructions'] ?? $validated['title']);
-            } else {
-                $topicOrBrief = (string) ($validated['topic_or_brief'] ?? ($validated['product_description'] ?? ''));
-            }
+            $topicOrBrief = $isCloneReference
+                ? (string) ($validated['remake_instructions'] ?? $validated['title'])
+                : (string) ($validated['topic_or_brief'] ?? ($validated['product_description'] ?? ''));
 
             $project = VideoProject::query()->create([
                 'title' => $validated['title'],
@@ -157,21 +150,6 @@ class ProjectWebController extends Controller
                     $storedRefPath = $refFile->store("references/project_{$project->id}", 'public');
                     if ($storedRefPath !== false) {
                         $styleTags[] = "[reference_video:{$storedRefPath}]";
-                        $project->update([
-                            'master_style_prompt' => implode(' ', $styleTags),
-                        ]);
-                    }
-                }
-            }
-
-            if ($isReaVideoRemake && $request->hasFile('rea_source_video')) {
-                $reaFile = $request->file('rea_source_video');
-                if ($reaFile instanceof UploadedFile) {
-                    $storedReaPath = $reaFile->store("references/project_{$project->id}", 'public');
-                    if ($storedReaPath !== false) {
-                        $threshold = (string) ($validated['rea_scene_threshold'] ?? '0.28');
-                        $styleTags[] = "[rea_video_remake:{$storedReaPath}]";
-                        $styleTags[] = "[rea_threshold:{$threshold}]";
                         $project->update([
                             'master_style_prompt' => implode(' ', $styleTags),
                         ]);
@@ -579,38 +557,6 @@ class ProjectWebController extends Controller
             ];
         })->values()->all();
 
-        // Báo cáo Rea-Video Shot-by-Shot Breakdown (nếu dự án tạo từ Tab 4)
-        $reaReport = null;
-        $reaBaseDir = "rea_video/project_{$project->id}";
-        if ($disk->exists("{$reaBaseDir}/breakdown.json")) {
-            $decodedRea = json_decode((string) $disk->get("{$reaBaseDir}/breakdown.json"), true) ?: [];
-            $reaShots = [];
-            foreach ((array) ($decodedRea['shots'] ?? []) as $shot) {
-                $firstRel = (string) ($shot['first_frame_rel'] ?? '');
-                $reaShots[] = [
-                    'shot_index' => (int) ($shot['shot_index'] ?? 1),
-                    'start_ms' => (int) ($shot['start_ms'] ?? 0),
-                    'end_ms' => (int) ($shot['end_ms'] ?? 0),
-                    'duration_ms' => (int) ($shot['duration_ms'] ?? 0),
-                    'shot_type' => (string) ($shot['shot_type'] ?? 'ai_video'),
-                    'camera_angle' => (string) ($shot['camera_angle'] ?? ''),
-                    'lighting_and_color' => (string) ($shot['lighting_and_color'] ?? ''),
-                    'reverse_prompt' => (string) ($shot['reverse_prompt'] ?? ''),
-                    'first_frame_url' => $firstRel !== '' && $disk->exists("{$reaBaseDir}/{$firstRel}")
-                        ? asset("storage/{$reaBaseDir}/{$firstRel}")
-                        : null,
-                ];
-            }
-
-            $reaReport = [
-                'video_md_url' => $disk->exists("{$reaBaseDir}/VIDEO.md")
-                    ? asset("storage/{$reaBaseDir}/VIDEO.md")
-                    : null,
-                'meta' => (array) ($decodedRea['meta'] ?? []),
-                'shots' => $reaShots,
-            ];
-        }
-
         return [
             'project' => [
                 'id' => $project->id,
@@ -646,7 +592,6 @@ class ProjectWebController extends Controller
             'product_profile' => $productData,
             'scenes' => $scenesPayload,
             'generation_logs' => $logsPayload,
-            'rea_video_report' => $reaReport,
         ];
     }
 }

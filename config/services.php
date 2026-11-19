@@ -55,4 +55,14 @@ return [
         'ort_threads' => (int) env('ORT_NUM_THREADS', 6),
     ],
 
+    'pexels' => [
+        'api_key' => env('PEXELS_API_KEY', ''),
+        'base_url' => env('PEXELS_BASE_URL', 'https://api.pexels.com/videos'),
+    ],
+
+    'pixabay' => [
+        'api_key' => env('PIXABAY_API_KEY', ''),
+        'base_url' => env('PIXABAY_BASE_URL', 'https://pixabay.com/api/videos'),
+    ],
+
 ];

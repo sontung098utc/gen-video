@@ -11,6 +11,7 @@ use App\Models\VideoProject;
 use App\Services\AI\FalLowCostService;
 use App\Services\Media\FfmpegVideoCompositorService;
 use App\Services\Media\HtmlMotionGraphicsService;
+use App\Services\Media\MoneyPrinterStockVideoService;
 use App\Services\Workflow\WorkflowOrchestrator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -55,6 +56,7 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
         FalLowCostService $falService,
         FfmpegVideoCompositorService $ffmpegCompositor,
         HtmlMotionGraphicsService $motionGraphicsService,
+        MoneyPrinterStockVideoService $stockVideoService,
         WorkflowOrchestrator $orchestrator
     ): void {
         $project = VideoProject::query()->with(['scenes', 'productProfile'])->findOrFail($this->videoProjectId);
@@ -87,6 +89,41 @@ class Step4_GenerateAiSceneVideosJob implements ShouldQueue
 
                 $filePrefix = sprintf('project_%d_scene_%02d_%d', $project->id, $scene->scene_order, time());
                 $durationMs = $scene->duration_ms > 0 ? $scene->duration_ms : 5000;
+
+                // Nếu dự án bật chế độ MoneyPrinterTurbo (Video Stock Pexels/Pixabay miễn phí $0.00)
+                if ($stockVideoService->shouldUseStockVideo($project)) {
+                    try {
+                        $stockClip = $stockVideoService->fetchAndPrepareSceneClip(
+                            project: $project,
+                            scene: $scene,
+                            filePrefix: $filePrefix,
+                            durationMs: $durationMs
+                        );
+
+                        $scene->update([
+                            'image_file_path' => $stockClip['image_relative_path'],
+                            'video_file_path' => $stockClip['video_relative_path'],
+                        ]);
+                        continue;
+                    } catch (Throwable $stockError) {
+                        Log::warning(sprintf(
+                            '[Step4] MoneyPrinterStockVideo fallback sang Motion Graphics cho Project #%d Scene #%d: %s',
+                            $project->id,
+                            $scene->scene_order,
+                            $stockError->getMessage()
+                        ));
+
+                        $this->renderMotionGraphicsScene(
+                            motionGraphicsService: $motionGraphicsService,
+                            project: $project,
+                            scene: $scene,
+                            filePrefix: $filePrefix,
+                            durationMs: $durationMs,
+                            disk: $disk
+                        );
+                        continue;
+                    }
+                }
 
                 // Nếu dự án/phân cảnh chủ động chọn chế độ Motion Graphics ($0.00)
                 if ($motionGraphicsService->shouldUseMotionGraphics($project, $scene)) {

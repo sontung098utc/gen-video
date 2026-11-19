@@ -49,7 +49,6 @@ yarn-error.log
 /storage/app/public/scenes/*
 /storage/app/public/subtitles/*
 /storage/app/public/references/*
-/storage/app/public/rea_video/*
 !/storage/app/temp/.gitkeep
 !/storage/app/temp_render/.gitkeep
 !/storage/app/public/renders/.gitkeep
