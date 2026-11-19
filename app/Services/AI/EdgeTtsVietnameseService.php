@@ -151,8 +151,18 @@ class EdgeTtsVietnameseService
                 ));
 
                 if ($attempt < $maxAttempts) {
-                    sleep(min(4, $attempt));
+                    sleep(min(3, $attempt));
                 }
+            }
+
+            // Nếu đọc cả câu dài bị Edge-TTS ngắt giữa chừng, tự động tách nhỏ theo dấu phẩy/chấm
+            // và đọc từng vế bằng CHÍNH XÁC giọng đọc $selectedVoice rồi ghép lại (giữ 100% đồng nhất giọng!)
+            if (! $synthesized) {
+                $synthesized = $this->synthesizeByClausesWithSameVoice(
+                    cleanText: $cleanText,
+                    selectedVoice: $selectedVoice,
+                    audioFullPath: $audioFullPath
+                );
             }
         } finally {
             @unlink($tempTextPath);
@@ -211,6 +221,75 @@ class EdgeTtsVietnameseService
         );
 
         return $result;
+    }
+
+    /**
+     * Tách câu dài thành các vế ngắn theo dấu câu và tổng hợp từng vế bằng CHÍNH XÁC `$selectedVoice`,
+     * sau đó ghép nối các file MP3 lại để vượt qua lỗi `NoAudioReceived` mà vẫn giữ 100% cùng một giọng đọc.
+     */
+    private function synthesizeByClausesWithSameVoice(
+        string $cleanText,
+        string $selectedVoice,
+        string $audioFullPath
+    ): bool {
+        $clauses = preg_split('/(?<=[,\.;!\?])\s+/u', $cleanText) ?: [$cleanText];
+        $clauses = array_values(array_filter(array_map('trim', $clauses), static fn (string $c): bool => $c !== ''));
+
+        if (count($clauses) <= 1) {
+            return false;
+        }
+
+        $tempDir = storage_path('app/temp/tts_clauses_' . uniqid());
+        $this->ensureDirectoryExists($tempDir);
+        $combinedBytes = '';
+
+        try {
+            foreach ($clauses as $idx => $clause) {
+                $clauseTxt = "{$tempDir}/c_{$idx}.txt";
+                $clauseMp3 = "{$tempDir}/c_{$idx}.mp3";
+                file_put_contents($clauseTxt, $clause);
+
+                $ok = false;
+                for ($try = 1; $try <= 4; $try++) {
+                    @unlink($clauseMp3);
+                    $proc = new Process([
+                        $this->edgeTtsBinary,
+                        '--voice',
+                        $selectedVoice,
+                        '--file',
+                        $clauseTxt,
+                        '--write-media',
+                        $clauseMp3,
+                    ]);
+                    $proc->setTimeout(30);
+                    $proc->run();
+
+                    if ($proc->isSuccessful() && is_file($clauseMp3) && filesize($clauseMp3) > 128) {
+                        $combinedBytes .= (string) file_get_contents($clauseMp3);
+                        $ok = true;
+                        break;
+                    }
+                    sleep(1);
+                }
+
+                if (! $ok) {
+                    return false;
+                }
+            }
+
+            if ($combinedBytes !== '') {
+                file_put_contents($audioFullPath, $combinedBytes);
+
+                return is_file($audioFullPath) && filesize($audioFullPath) > 256;
+            }
+
+            return false;
+        } finally {
+            foreach (glob("{$tempDir}/*") ?: [] as $f) {
+                @unlink($f);
+            }
+            @rmdir($tempDir);
+        }
     }
 
     /**
