@@ -100,21 +100,7 @@ class EdgeTtsVietnameseService
 
         $startTime = microtime(true);
 
-        $command = [
-            $this->edgeTtsBinary,
-            '--voice',
-            $selectedVoice,
-            '--rate=' . $this->defaultRate,
-            '--pitch=' . $this->defaultPitch,
-            '--file',
-            $tempTextPath,
-            '--write-media',
-            $audioFullPath,
-            '--write-subtitles',
-            $subtitleFullPath,
-        ];
-
-        $maxAttempts = 5;
+        $maxAttempts = 6;
         $lastError = '';
         $synthesized = false;
 
@@ -123,7 +109,30 @@ class EdgeTtsVietnameseService
                 @unlink($audioFullPath);
                 @unlink($subtitleFullPath);
 
-                $process = new Process($command);
+                // Từ lần thử thứ 3 trở đi, bỏ qua --rate/--pitch để tránh lỗi SSML prosody hoặc làm sạch dấu câu đặc biệt
+                $currentCommand = [
+                    $this->edgeTtsBinary,
+                    '--voice',
+                    $selectedVoice,
+                ];
+                if ($attempt <= 2) {
+                    $currentCommand[] = '--rate=' . $this->defaultRate;
+                    $currentCommand[] = '--pitch=' . $this->defaultPitch;
+                }
+                if ($attempt >= 4) {
+                    $sanitizedText = trim(preg_replace('/[^\p{L}\p{N}\s,\.\?]/u', ' ', $cleanText) ?? $cleanText);
+                    file_put_contents($tempTextPath, $sanitizedText !== '' ? $sanitizedText : $cleanText);
+                }
+                $currentCommand = array_merge($currentCommand, [
+                    '--file',
+                    $tempTextPath,
+                    '--write-media',
+                    $audioFullPath,
+                    '--write-subtitles',
+                    $subtitleFullPath,
+                ]);
+
+                $process = new Process($currentCommand);
                 $process->setTimeout(45);
                 $process->run();
 
@@ -142,7 +151,7 @@ class EdgeTtsVietnameseService
                 ));
 
                 if ($attempt < $maxAttempts) {
-                    usleep(600_000);
+                    sleep(min(4, $attempt));
                 }
             }
         } finally {
