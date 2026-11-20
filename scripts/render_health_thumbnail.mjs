@@ -1,19 +1,53 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 /**
  * Render ảnh bìa Photographic chuẩn 1080x1920 cho kênh "Sống Khỏe Mỗi Ngày".
- * Dùng Chromium render HTML/CSS Typography tiếng Việt sắc nét 100% không sai dấu.
+ * Gọi trực tiếp Chrome / Edge / Chromium --headless --screenshot (không cần npm install),
+ * đảm bảo Typography tiếng Việt sắc nét 100% không sai dấu.
  */
-async function main() {
+function findBrowserBinary() {
+    const candidates = process.platform === 'win32'
+        ? [
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+            'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+            path.join(os.homedir(), 'AppData\\Local\\Google\\Chrome\\Application\\chrome.exe'),
+        ]
+        : [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+        ];
+
+    for (const bin of candidates) {
+        if (fs.existsSync(bin)) {
+            return bin;
+        }
+    }
+    return null;
+}
+
+function main() {
     const payloadPath = process.argv[2];
     if (!payloadPath || !fs.existsSync(payloadPath)) {
         console.error('Missing payload JSON file path');
         process.exit(1);
     }
 
-    const payload = JSON.parse(fs.readFileSync(payloadPath, 'utf8'));
+    const browserBin = findBrowserBinary();
+    if (!browserBin) {
+        console.error('Chrome/Edge/Chromium binary not found');
+        process.exit(1);
+    }
+
+    const rawJson = fs.readFileSync(payloadPath, 'utf8').replace(/^\uFEFF/, '');
+    const payload = JSON.parse(rawJson);
     const {
         bgImagePath = '',
         outputPath,
@@ -47,7 +81,7 @@ async function main() {
 <meta charset="UTF-8" />
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
+  html, body {
     width: 1080px;
     height: 1920px;
     overflow: hidden;
@@ -68,7 +102,7 @@ async function main() {
     inset: 0;
     background: linear-gradient(
       180deg,
-      rgba(6, 40, 28, 0.72) 0%,
+      rgba(6, 40, 28, 0.74) 0%,
       rgba(0, 0, 0, 0.08) 32%,
       rgba(0, 0, 0, 0.18) 58%,
       rgba(4, 24, 18, 0.90) 88%,
@@ -82,13 +116,12 @@ async function main() {
     right: 64px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
   }
   .brand-pill {
     display: inline-flex;
     align-items: center;
     gap: 16px;
-    background: rgba(16, 185, 129, 0.94);
+    background: rgba(16, 185, 129, 0.95);
     color: #ffffff;
     padding: 18px 34px;
     border-radius: 999px;
@@ -121,7 +154,7 @@ async function main() {
   }
   .headline {
     color: #fef08a;
-    font-size: 86px;
+    font-size: 84px;
     font-weight: 900;
     line-height: 1.18;
     text-shadow:
@@ -135,7 +168,6 @@ async function main() {
     align-items: center;
     align-self: flex-start;
     background: rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(8px);
     border-left: 8px solid #34d399;
     padding: 18px 30px;
     border-radius: 14px;
@@ -162,21 +194,28 @@ async function main() {
 </body>
 </html>`;
 
-    const browser = await chromium.launch({ headless: true });
-    try {
-        const page = await browser.newPage({ viewport: { width: 1080, height: 1920 } });
-        await page.setContent(html, { waitUntil: 'load' });
-        await page.screenshot({
-            path: outputPath,
-            type: 'jpeg',
-            quality: 92,
-        });
-    } finally {
-        await browser.close();
+    const tmpHtml = path.join(os.tmpdir(), `skmn_cover_${Date.now()}.html`);
+    fs.writeFileSync(tmpHtml, html, 'utf8');
+
+    const absOut = path.resolve(outputPath);
+    fs.mkdirSync(path.dirname(absOut), { recursive: true });
+
+    const res = spawnSync(browserBin, [
+        '--headless=new',
+        '--disable-gpu',
+        '--no-sandbox',
+        '--hide-scrollbars',
+        '--window-size=1080,1920',
+        `--screenshot=${absOut}`,
+        pathToFileURL(tmpHtml).href,
+    ], { stdio: 'pipe', timeout: 45000 });
+
+    try { fs.unlinkSync(tmpHtml); } catch {}
+
+    if (res.status !== 0 || !fs.existsSync(absOut)) {
+        console.error('Headless browser screenshot failed:', res.stderr?.toString() || '');
+        process.exit(1);
     }
 }
 
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-});
+main();
