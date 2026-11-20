@@ -190,7 +190,7 @@ class Agent5MultiVoiceStudioService
             $rateStr = ($ratePercent >= 0 ? '+' : '') . $ratePercent . '%';
             $edgeVoice = $this->edgeTts->resolveVietnameseVoice($voiceId);
 
-            $edgeResult = $this->edgeTts->synthesize(
+            $edgeResult = $this->edgeTts->synthesizeSceneVoice(
                 text: $cleanText,
                 voice: $edgeVoice,
                 filePrefix: $filePrefix,
@@ -201,7 +201,7 @@ class Agent5MultiVoiceStudioService
 
             return [
                 'audio_relative_path' => $edgeResult['audio_relative_path'],
-                'vtt_relative_path' => $edgeResult['vtt_relative_path'],
+                'vtt_relative_path' => $edgeResult['subtitle_relative_path'],
                 'duration_ms' => $edgeResult['duration_ms'],
                 'provider_used' => 'edge_tts',
             ];

@@ -69,7 +69,8 @@ class EdgeTtsVietnameseService
         ?string $voice = null,
         ?string $filePrefix = null,
         ?int $videoProjectId = null,
-        ?int $storyboardSceneId = null
+        ?int $storyboardSceneId = null,
+        ?string $rate = null
     ): array {
         $cleanText = trim(preg_replace('/\s+/', ' ', $text) ?? $text);
         $cleanText = trim(preg_replace('/\s+([,\.\!\?;:])/u', '$1', $cleanText) ?? $cleanText);
@@ -79,6 +80,7 @@ class EdgeTtsVietnameseService
 
         // Khóa chính xác giọng đọc được truyền vào (NamMinh hoặc HoaiMy)
         $selectedVoice = $this->resolveVietnameseVoice($voice);
+        $effectiveRate = ($rate !== null && trim($rate) !== '') ? trim($rate) : $this->defaultRate;
         $baseName = $filePrefix !== null && $filePrefix !== ''
             ? Str::slug($filePrefix, '_')
             : 'tts_' . Str::random(12);
@@ -117,7 +119,7 @@ class EdgeTtsVietnameseService
                     $selectedVoice,
                 ];
                 if ($attempt <= 2) {
-                    $currentCommand[] = '--rate=' . $this->defaultRate;
+                    $currentCommand[] = '--rate=' . $effectiveRate;
                     $currentCommand[] = '--pitch=' . $this->defaultPitch;
                 }
                 if ($attempt >= 4) {
