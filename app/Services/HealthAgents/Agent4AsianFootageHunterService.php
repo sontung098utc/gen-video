@@ -39,8 +39,9 @@ class Agent4AsianFootageHunterService
     /** @var array<int, string> */
     private array $usedRemoteUrls = [];
 
-    public function __construct()
-    {
+    public function __construct(
+        private readonly HealthGeminiClient $gemini
+    ) {
         $this->ffmpegBinary = (string) config('services.ffmpeg.ffmpeg_binary', 'ffmpeg');
         $this->maxThreads = max(1, min(6, (int) config('services.ffmpeg.max_threads', 6)));
         $this->nicePriority = (int) config('services.ffmpeg.nice_priority', 10);
@@ -263,9 +264,17 @@ class Agent4AsianFootageHunterService
                 foreach ($ordered as $vid) {
                     $files = is_array($vid['video_files'] ?? null) ? $vid['video_files'] : [];
                     $bestUrl = $this->pickBestPexelsFile($files);
-                    if ($bestUrl !== null && ! in_array($bestUrl, $this->usedRemoteUrls, true)) {
-                        return $bestUrl;
+                    if ($bestUrl === null || in_array($bestUrl, $this->usedRemoteUrls, true)) {
+                        continue;
                     }
+
+                    $previewImageUrl = (string) ($vid['image'] ?? '');
+                    if ($previewImageUrl !== '' && ! $this->isAsianOrNeutralSubjectPreview($previewImageUrl)) {
+                        Log::info('[Agent4AsianFootage] Loại bỏ video có người ngoài châu Á (Pexels): ' . ($vid['url'] ?? $bestUrl));
+                        continue;
+                    }
+
+                    return $bestUrl;
                 }
             } catch (Throwable $e) {
                 Log::warning('[Agent4AsianFootage] Pexels error: ' . $e->getMessage());
@@ -436,6 +445,42 @@ class Agent4AsianFootageHunterService
         $dir = dirname($filePath);
         if (! is_dir($dir)) {
             @mkdir($dir, 0775, true);
+        }
+    }
+
+    /**
+     * Dùng Gemini Vision kiểm tra nhanh ảnh xem trước của video:
+     * CHỈ chấp nhận nếu người trong ảnh là người Việt Nam / Trung Quốc / Đông Á, HOẶC không có mặt người (chỉ có đồ ăn, thảo dược, trà, y tế).
+     * Loại bỏ 100% người châu Âu, châu Phi, Nam Á, Mỹ Latin...
+     */
+    private function isAsianOrNeutralSubjectPreview(string $previewImageUrl): bool
+    {
+        $tmpImg = storage_path('app/temp/a4_preview_' . uniqid() . '.jpg');
+        $this->ensureParentDirectory($tmpImg);
+
+        try {
+            $dl = Http::timeout(12)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->sink($tmpImg)
+                ->get($previewImageUrl);
+
+            if (! $dl->successful() || ! is_file($tmpImg) || filesize($tmpImg) < 512) {
+                return true;
+            }
+
+            $res = $this->gemini->generateJson(
+                systemPrompt: 'You are a strict visual ethnicity & content screener for a Vietnamese health channel. Return JSON {"accept": true/false, "reason": "..."}.',
+                userPrompt: 'Inspect this video preview frame. Set "accept": false if ANY visible person looks European, Caucasian, Black/African, Middle Eastern, or non-East-Asian. Set "accept": true ONLY if visible people are clearly Vietnamese / Chinese / East Asian, OR if there are no people/faces at all (pure food, herbs, tea, nature, medical graphics, hands only).',
+                actionType: 'agent4_vision_ethnicity_check',
+                imagePaths: [$tmpImg],
+                temperature: 0.1
+            );
+
+            return (bool) ($res['accept'] ?? true);
+        } catch (Throwable) {
+            return true;
+        } finally {
+            @unlink($tmpImg);
         }
     }
 

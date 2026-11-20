@@ -47,34 +47,31 @@ class Agent3HealthScriptwriterService
             : '';
 
         $systemPrompt = <<<PROMPT
-Bạn là Agent AI 3 — Biên kịch Y khoa & Sức khỏe cao cấp cho kênh "{$channelName}" (TikTok, Fanpage Reels, YouTube Shorts).
+Bạn là Agent AI 3 — Biên kịch Video Ngắn Sức Khỏe giữ chân người xem cực cao cho kênh "{$channelName}" (TikTok, Fanpage Reels, YouTube Shorts).
 
 QUY CHUẨN CHÍNH SÁCH NỀN TẢNG:
 {$policyRules}
 
-QUY CHUẨN CẤU TRÚC VIDEO VIRAL:
-{$viralRules}
-
-YÊU CẦU ĐẦU RA (BẮT BUỘC JSON):
-- Tạo đúng 6 phân cảnh (tổng thời lượng khoảng 45–60 giây).
-- `narration_text`: Tiếng Việt 100% chuẩn chính tả, ấm áp, dễ hiểu, KHÔNG pha tạp từ tiếng Anh vô nghĩa. Có thể chèn tối đa 1 thẻ hiệu ứng âm thanh hợp lý ở vị trí nhấn mạnh: `@{whoosh}`, `@{pop}`, `@{ding}`, `@{chime}`.
-- `visual_prompt`: Từ khóa tìm video stock bằng TIẾNG ANH ngắn gọn (3–6 từ) BẮT BUỘC ưu tiên bối cảnh **người châu Á / Việt Nam / Trung Quốc** hoặc thảo dược/món ăn lành mạnh (ví dụ: `"asian woman drinking herbal tea"`, `"elderly asian couple morning exercise"`, `"chinese traditional herbs teapot"`, `"asian doctor explaining nutrition"`).
-- `transition_type`: Chọn một trong các chuyển cảnh CapCut mượt mà: `fade`, `smoothleft`, `smoothright`, `wipeup`, `dissolve`, `circleopen`.
-- `sfx_prompt`: Một từ khóa ngắn (`whoosh`, `pop`, `ding`, `chime`, `none`).
-- `cover_headline`: Tiêu đề ngắn 4–7 từ siêu sắc nét, chuẩn chính tả tiếng Việt để in lên Ảnh bìa Photographic.
-- `thumbnail_visual_prompt`: Mô tả ảnh chụp thực tế (Photographic, ánh sáng tự nhiên, người châu Á hoặc nguyên liệu sức khỏe đẹp mắt, TUYỆT ĐỐI KHÔNG CÓ CHỮ trên ảnh) bằng tiếng Anh cho Agent AI 6.
+QUY CHUẨN KỊCH BẢN TRỌNG TÂM — KHÔNG LAN MAN (BẮT BUỘC):
+1. **Cảnh 1 (HOOK 0–3 giây đầu — CỰC QUAN TRỌNG)**: Phải đánh thẳng vào 1 sai lầm phổ biến hoặc 1 sự thật khiến người xem giật mình dừng lại nghe (VD: *"Rất nhiều người cứ nghĩ uống nước lạnh buổi sáng là tốt, nhưng đây mới là sự thật..."* hoặc *"Nếu bạn có 3 dấu hiệu này vào mùa Đông, thận đang kêu cứu đấy!"*). TUYỆT ĐỐI KHÔNG chào hỏi dài dòng, không nói chung chung kiểu "hãy bảo vệ sức khỏe".
+2. **Cảnh 2, 3, 4 (ĐI THẲNG VÀO GIÁ TRỊ CỤ THỂ)**: Nêu rõ TÊN CỤ THỂ từng thực phẩm / huyệt đạo / thói quen / con số (VD: *1 cốc nước ấm 40 độ*, *3 lát gừng tươi*, *ngâm chân 15 phút trước 21h*, *tránh 3 món nhiều muối*). Mỗi cảnh 1 ý đắt giá, rõ ràng, súc tích 18–25 từ.
+3. **Cảnh 5 (LƯU Ý AN TOÀN THỰC TẾ)**: Ai không nên áp dụng hoặc liều lượng tối đa mỗi ngày.
+4. **Cảnh 6 (CTA 3 giây cuối)**: Ngắn gọn, mời lưu lại cho người thân và theo dõi kênh {$channelName}.
+5. **Thẻ SFX**: Chỉ dùng tối đa 1–2 thẻ `@{pop}` hoặc `@{ding}` ở điểm nhấn quan trọng nhất trong cả video (KHÔNG nhồi `@{whoosh}`).
+6. **visual_prompt (TIẾNG ANH 3–5 TỪ)**: PHẢI mô tả cụ thể cảnh **người Việt Nam / người Trung Quốc** HOẶC **cận cảnh thực phẩm / thảo dược / trà / y tế KHÔNG CÓ NGƯỜI CHÂU ÂU/CHÂU PHI** (VD: `"vietnamese woman drinking warm tea"`, `"chinese herbal medicine teapot"`, `"fresh ginger honey warm water"`, `"asian doctor medical clinic"`, `"healthy green vegetables bowl"`).
 
 Cấu trúc JSON:
 {
-  "cover_headline": "TIÊU ĐỀ NGẮN CHO ẢNH BÌA",
-  "thumbnail_visual_prompt": "Photorealistic studio photography of ...",
+  "cover_headline": "TIÊU ĐỀ NGẮN 4-6 TỪ IN HOA GIẬT TÍT",
+  "cover_badge_red": "NHÃN ĐỎ 3-5 TỪ (VD: ĐỪNG CHỦ QUAN)",
+  "thumbnail_visual_prompt": "Bright sunny close-up studio food/herb photography of [đối tượng chính của bài], vibrant natural colors, crisp detail, no text",
   "scenes": [
     {
       "scene_order": 1,
-      "narration_text": "Câu thoại tiếng Việt...",
-      "visual_prompt": "asian woman morning herbal tea",
+      "narration_text": "Câu thoại Hook cực mạnh, đi thẳng vấn đề...",
+      "visual_prompt": "vietnamese woman morning warm tea",
       "transition_type": "fade",
-      "sfx_prompt": "whoosh",
+      "sfx_prompt": "none",
       "camera_motion": "zoom_in"
     }
   ]
@@ -82,7 +79,7 @@ Cấu trúc JSON:
 PROMPT;
 
         $userPrompt = <<<USER
-Hãy viết kịch bản video kiến thức sức khỏe cho kênh "{$channelName}":
+Hãy viết kịch bản 6 phân cảnh CỰC KỲ SÚC TÍCH, ĐÚNG TRỌNG TÂM, KHÔNG LAN MAN cho video:
 - Tiêu đề video: {$title}
 - Góc tiếp cận: {$angle}
 - Nội dung trọng tâm: {$brief}
@@ -95,7 +92,8 @@ USER;
 
         $scenesData = [];
         $coverHeadline = $planItem?->cover_headline ?: $project->title;
-        $thumbnailPrompt = "Photorealistic natural daylight photography of healthy Asian lifestyle, fresh herbal tea and organic nutritious ingredients, warm clean studio lighting, vertical 9:16 composition, no text, no watermark";
+        $coverBadgeRed = 'KIẾN THỨC HỮU ÍCH';
+        $thumbnailPrompt = "Bright sunlit natural photography of fresh green herbs, ginger tea and healthy organic ingredients on clean wooden table, vibrant colors, no text, no watermark";
 
         try {
             $res = $this->gemini->generateJson(
@@ -109,6 +107,9 @@ USER;
             $scenesData = is_array($res['scenes'] ?? null) ? $res['scenes'] : [];
             if (! empty($res['cover_headline'])) {
                 $coverHeadline = trim((string) $res['cover_headline']);
+            }
+            if (! empty($res['cover_badge_red'])) {
+                $coverBadgeRed = trim((string) $res['cover_badge_red']);
             }
             if (! empty($res['thumbnail_visual_prompt'])) {
                 $thumbnailPrompt = trim((string) $res['thumbnail_visual_prompt']);
@@ -124,7 +125,7 @@ USER;
 
         $validTransitions = ['fade', 'smoothleft', 'smoothright', 'wipeup', 'dissolve', 'circleopen'];
 
-        DB::transaction(function () use ($project, $scenesData, $validTransitions, $coverHeadline, $thumbnailPrompt): void {
+        DB::transaction(function () use ($project, $scenesData, $validTransitions, $coverHeadline, $coverBadgeRed, $thumbnailPrompt): void {
             $project->scenes()->delete();
 
             foreach (array_values($scenesData) as $idx => $row) {
@@ -141,8 +142,8 @@ USER;
                     'video_project_id' => $project->id,
                     'scene_order' => $idx + 1,
                     'narration_text' => trim((string) ($row['narration_text'] ?? '')),
-                    'visual_prompt' => trim((string) ($row['visual_prompt'] ?? 'asian healthy lifestyle morning tea')),
-                    'sfx_prompt' => trim((string) ($row['sfx_prompt'] ?? 'whoosh')),
+                    'visual_prompt' => trim((string) ($row['visual_prompt'] ?? 'chinese herbal tea warm cup')),
+                    'sfx_prompt' => trim((string) ($row['sfx_prompt'] ?? 'none')),
                     'camera_motion' => trim((string) ($row['camera_motion'] ?? 'zoom_in')),
                     'transition_type' => $transition,
                     'transition_duration_ms' => 450,
@@ -152,6 +153,7 @@ USER;
 
             $seoMeta = is_array($project->seo_meta_json) ? $project->seo_meta_json : [];
             $seoMeta['cover_headline'] = $coverHeadline;
+            $seoMeta['cover_badge_red'] = $coverBadgeRed;
             $seoMeta['thumbnail_visual_prompt'] = $thumbnailPrompt;
 
             $project->update([

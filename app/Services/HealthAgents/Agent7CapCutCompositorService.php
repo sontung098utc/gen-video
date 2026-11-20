@@ -98,22 +98,13 @@ class Agent7CapCutCompositorService
 
             $sceneDurationMs = max(1500, (int) round($this->compositor->probeMediaDurationSeconds($voiceFull) * 1000));
 
-            // Hiệu ứng chuyển cảnh CapCut giữa cảnh i và i+1
+            // Hiệu ứng chuyển cảnh CapCut mượt mà giữa cảnh i và i+1 (không nhồi whoosh ồn ào)
             if ($idx > 0) {
                 $trans = trim((string) ($scene->transition_type ?: $capcutDefaultTransitions[$idx % count($capcutDefaultTransitions)]));
                 $transitionTypes[] = $trans;
-
-                // Chèn SFX chuyển cảnh nhẹ nhàng đúng mốc chuyển cảnh
-                $transSfx = $this->sfxMatcher->matchSfxForScene($scene->sfx_prompt ?: 'whoosh');
-                if ($transSfx !== null && is_file($transSfx)) {
-                    $sfxTimeline[] = [
-                        'file_path' => $transSfx,
-                        'start_ms' => max(0, $cursorMs - 150),
-                    ];
-                }
             }
 
-            // Gắn phụ đề VTT + SFX theo mốc từ khóa `@{whoosh}`, `@{pop}`, `@{ding}`
+            // Gắn phụ đề VTT + SFX tinh tế đúng mốc từ khóa nhấn mạnh (`@{pop}`, `@{ding}`)
             if ($scene->subtitle_file_path && $disk->exists($scene->subtitle_file_path)) {
                 $vttFull = $disk->path($scene->subtitle_file_path);
                 $sceneVttTimeline[] = [
@@ -135,8 +126,8 @@ class Agent7CapCutCompositorService
             $cursorMs += $sceneDurationMs;
         }
 
-        // Giới hạn tối đa 10 SFX trong 1 video để không bị ồn
-        $sfxTimeline = array_slice($sfxTimeline, 0, 10);
+        // Giới hạn tối đa 3 SFX tinh tế trong 1 video để giữ sự chuyên nghiệp, không gây ồn
+        $sfxTimeline = array_slice($sfxTimeline, 0, 3);
 
         $tempDir = storage_path('app/temp/agent7_' . $project->id . '_' . uniqid());
         if (! is_dir($tempDir)) {

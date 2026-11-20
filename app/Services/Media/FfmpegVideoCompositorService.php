@@ -476,13 +476,13 @@ class FfmpegVideoCompositorService
             );
         }
 
-        // 3. Các luồng hiệu ứng âm thanh SFX (+3dB) đặt đúng timestamp chuyển cảnh bằng adelay
+        // 3. Các luồng hiệu ứng âm thanh SFX (-15dB tinh tế, không lấn át giọng đọc) đặt đúng timestamp bằng adelay
         $sfxLabels = [];
         foreach ($validSfxItems as $idx => $sfxMeta) {
             $label = "[sfx_{$idx}]";
             $delayMs = $sfxMeta['start_ms'];
             $filterParts[] = sprintf(
-                '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=+3dB,adelay=%d|%d%s',
+                '[%d:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=-15dB,adelay=%d|%d%s',
                 $sfxMeta['input_index'],
                 $delayMs,
                 $delayMs,

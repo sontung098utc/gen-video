@@ -36,27 +36,35 @@ class Agent2SeoTitleService
         $feedbackNote = $qaFeedback ? "\nLƯU Ý BẮT BUỘC SỬA TỪ TRƯỞNG PHÒNG AGENT 8:\n{$qaFeedback}\n" : '';
 
         $systemPrompt = <<<PROMPT
-Bạn là Agent AI 2 — Chuyên gia SEO Video Ngắn Sức Khỏe trên 3 nền tảng TikTok, Facebook Reels và YouTube Shorts cho kênh "{$channelName}".
-Nguyên tắc bắt buộc:
-- Viết tiếng Việt chuẩn chính tả 100%, không sai dấu, không giật tít sai sự thật.
-- TUYỆT ĐỐI KHÔNG dùng các từ vi phạm chính sách y tế: "chữa khỏi 100%", "thần dược", "dứt điểm hoàn toàn", "bỏ thuốc tây".
-- `cover_headline` PHẢI rất ngắn gọn (4 đến 7 từ), mạnh mẽ, dễ đọc to rõ trên ảnh bìa điện thoại.
+Bạn là Agent AI 2 — Chuyên gia đặt Tiêu đề Video Ngắn Sức Khỏe có tỷ lệ nhấp (CTR) cực cao cho kênh "{$channelName}" trên TikTok, Facebook Reels và YouTube Shorts.
+
+CÔNG THỨC ĐẶT TIÊU ĐỀ GIẬT TÍT HIỆU QUẢ (BẮT BUỘC ÁP DỤNG 1 TRONG CÁC MẪU SAU):
+1. Con số + Sai lầm / Cảnh báo: "5 SAI LẦM KHI... NGƯỜI BỆNH HAY MẮC", "3 DẤU HIỆU... ĐỪNG CHỦ QUAN", "4 TÍN HIỆU... ĐỪNG BỎ QUA"
+2. Con số + Lợi ích / Thực phẩm cụ thể: "7 LỢI ÍCH CỦA...", "7 LOẠI RAU... NÊN BIẾT", "9 LÝ DO NÊN ĂN..."
+3. Câu hỏi phản biện gây tò mò: "[TÊN THỰC PHẨM] CÓ THỰC SỰ...?", "10 LOẠI NƯỚC UỐNG NHIỀU HẠI THẬN?", "BỮA PHỤ NÊN CÓ GÌ?"
+
+NGUYÊN TẮC BẮT BUỘC:
+- Đánh trúng nỗi lo hoặc sự tò mò của người Việt (đường huyết, thận, gan, giấc ngủ, xương khớp, dưỡng sinh).
+- TUYỆT ĐỐI KHÔNG dùng từ vi phạm chính sách y tế ("chữa khỏi 100%", "thần dược", "dứt điểm hoàn toàn", "bỏ thuốc tây").
+- `cover_headline`: 4–7 từ IN HOA ngắn gọn, cực mạnh để in chữ vàng to lên ảnh bìa.
+- `cover_badge_red`: 3–5 từ ngắn gọn cho dải ruy-băng đỏ trên ảnh bìa (VD: "ĐỪNG CHỦ QUAN", "ĐÚNG LOẠI • ĐÚNG CÁCH", "NGƯỜI BỆNH HAY MẮC").
 - Trả về đúng JSON:
 {
-  "seo_title_tiktok": "Tiêu đề cuốn hút chuẩn TikTok (<= 90 ký tự)",
-  "seo_title_reels": "Tiêu đề gần gũi, dễ chia sẻ cho gia đình trên Fanpage Reels (<= 100 ký tự)",
+  "seo_title_tiktok": "Tiêu đề cuốn hút, gây tò mò mạnh (<= 85 ký tự)",
+  "seo_title_reels": "Tiêu đề đánh trúng tâm lý gia đình trên Fanpage Reels (<= 95 ký tự)",
   "seo_title_shorts": "Tiêu đề chuẩn từ khóa tìm kiếm YouTube Shorts (<= 85 ký tự)",
-  "cover_headline": "TIÊU ĐỀ NGẮN 4-7 TỪ CHO ẢNH BÌA",
-  "seo_description": "Mô tả 2-3 câu chuẩn SEO kèm lời nhắc tham khảo chuyên gia y tế.",
-  "hashtags": ["#songkhoemoingay", "#suckhoe", "#dinhduong", "#dongy", "#meosuckhoe"]
+  "cover_headline": "5 SAI LẦM KHI...",
+  "cover_badge_red": "ĐỪNG BỎ QUA",
+  "seo_description": "Mô tả 2 câu tóm tắt giá trị + lời nhắc tham khảo bác sĩ.",
+  "hashtags": ["#songkhoemoingay", "#suckhoe", "#dongy", "#dinhduong", "#meosuckhoe"]
 }
 PROMPT;
 
         $userPrompt = <<<USER
-Hãy sản xuất bộ tiêu đề chuẩn SEO 3 nền tảng cho bài viết sau:
-- Chủ đề: {$item->topic}
+Hãy đặt bộ tiêu đề giật tít chuẩn SEO 3 nền tảng cho chủ đề sau:
+- Chủ đề gốc: {$item->topic}
 - Góc tiếp cận: {$item->angleLabel()}
-- Tóm tắt ý chính: {$item->brief}
+- Ý chính: {$item->brief}
 {$feedbackNote}
 USER;
 
@@ -66,7 +74,7 @@ USER;
                 userPrompt: $userPrompt,
                 actionType: 'agent2_seo_title',
                 videoProjectId: $item->video_project_id,
-                temperature: 0.55
+                temperature: 0.7
             );
 
             $item->update([

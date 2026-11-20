@@ -5,9 +5,12 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 /**
- * Render ảnh bìa Photographic chuẩn 1080x1920 cho kênh "Sống Khỏe Mỗi Ngày".
- * Gọi trực tiếp Chrome / Edge / Chromium --headless --screenshot (không cần npm install),
- * đảm bảo Typography tiếng Việt sắc nét 100% không sai dấu.
+ * Render ảnh bìa Photographic chuẩn 1080x1920 theo đúng nhận diện kênh "Sống Khỏe Mỗi Ngày":
+ *  - Nền trên: Ánh nắng xanh lá tươi sáng tràn đầy sức sống (sunny green bokeh).
+ *  - Logo trên cùng: Badge trắng bo tròn + 2 lá xanh + chữ "SỐNG KHỎE MỖI NGÀY".
+ *  - Phần trên-giữa: Tiêu đề IN HOA cực to, màu VÀNG RỰC & TRẮNG có viền đen dày nổi bật.
+ *  - Dải ruy-băng đỏ nhấn mạnh ngay dưới tiêu đề chính.
+ *  - Nửa dưới: Ảnh chụp Photographic thực tế sắc nét, tươi sáng.
  */
 function findBrowserBinary() {
     const candidates = process.platform === 'win32'
@@ -33,6 +36,18 @@ function findBrowserBinary() {
     return null;
 }
 
+function splitHeadlineForImpact(rawHeadline) {
+    const words = String(rawHeadline || '').trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if (words.length <= 2) {
+        return { top: words.join(' '), bottom: '' };
+    }
+    const splitAt = Math.min(3, Math.ceil(words.length / 2));
+    return {
+        top: words.slice(0, splitAt).join(' '),
+        bottom: words.slice(splitAt).join(' '),
+    };
+}
+
 function main() {
     const payloadPath = process.argv[2];
     if (!payloadPath || !fs.existsSync(payloadPath)) {
@@ -51,9 +66,9 @@ function main() {
     const {
         bgImagePath = '',
         outputPath,
-        headline = 'SỐNG KHỎE MỖI NGÀY',
+        headline = '5 SAI LẦM KHI CHĂM SÓC SỨC KHỎE',
         channelName = 'Sống Khỏe Mỗi Ngày',
-        subtitle = 'Kiến Thức Sức Khỏe Chính Thống',
+        badgeRed = '',
     } = payload;
 
     let bgDataUri = '';
@@ -71,9 +86,11 @@ function main() {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
 
-    const safeHeadline = escapeHtml(headline.toUpperCase());
+    const parts = splitHeadlineForImpact(headline);
+    const safeTop = escapeHtml(parts.top);
+    const safeBottom = escapeHtml(parts.bottom);
     const safeChannel = escapeHtml(channelName.toUpperCase());
-    const safeSubtitle = escapeHtml(subtitle);
+    const safeBadgeRed = escapeHtml((badgeRed || '').toUpperCase());
 
     const html = `<!DOCTYPE html>
 <html lang="vi">
@@ -85,9 +102,9 @@ function main() {
     width: 1080px;
     height: 1920px;
     overflow: hidden;
-    font-family: 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+    font-family: 'Segoe UI', 'Impact', 'Arial Black', sans-serif;
     position: relative;
-    background: linear-gradient(160deg, #064e3b 0%, #0f172a 100%);
+    background: linear-gradient(180deg, #dcfce7 0%, #86efac 32%, #166534 100%);
   }
   .bg-photo {
     position: absolute;
@@ -95,101 +112,136 @@ function main() {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    filter: contrast(1.06) saturate(1.08) brightness(0.92);
+    filter: brightness(1.06) contrast(1.06) saturate(1.15);
   }
-  .vignette {
+  /* Lớp phủ ánh nắng xanh tươi ở nửa trên để chữ vàng-trắng nổi bật rực rỡ, giữ nửa dưới ảnh chụp sắc nét */
+  .sunny-top-glow {
     position: absolute;
     inset: 0;
     background: linear-gradient(
       180deg,
-      rgba(6, 40, 28, 0.74) 0%,
-      rgba(0, 0, 0, 0.08) 32%,
-      rgba(0, 0, 0, 0.18) 58%,
-      rgba(4, 24, 18, 0.90) 88%,
-      rgba(2, 16, 12, 0.96) 100%
+      rgba(22, 101, 52, 0.78) 0%,
+      rgba(34, 197, 94, 0.56) 26%,
+      rgba(134, 239, 172, 0.28) 46%,
+      rgba(0, 0, 0, 0.00) 60%,
+      rgba(0, 0, 0, 0.14) 100%
     );
   }
-  .top-bar {
+  .sunflare {
     position: absolute;
-    top: 84px;
-    left: 64px;
-    right: 64px;
+    top: -120px;
+    left: -80px;
+    width: 560px;
+    height: 560px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(254, 249, 195, 0.72) 0%, rgba(254, 249, 195, 0) 70%);
+    pointer-events: none;
+  }
+  .sunflare-right {
+    position: absolute;
+    top: 40px;
+    right: -120px;
+    width: 480px;
+    height: 480px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(187, 247, 208, 0.55) 0%, rgba(187, 247, 208, 0) 70%);
+    pointer-events: none;
+  }
+  .header-stack {
+    position: relative;
+    z-index: 10;
+    padding: 68px 48px 0 48px;
     display: flex;
+    flex-direction: column;
     align-items: center;
+    text-align: center;
+    gap: 24px;
   }
   .brand-pill {
     display: inline-flex;
     align-items: center;
-    gap: 16px;
-    background: rgba(16, 185, 129, 0.95);
-    color: #ffffff;
-    padding: 18px 34px;
+    gap: 14px;
+    background: #ffffff;
+    color: #14532d;
+    padding: 14px 34px;
     border-radius: 999px;
     font-size: 32px;
-    font-weight: 800;
-    letter-spacing: 1.5px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-    border: 3px solid rgba(255, 255, 255, 0.45);
+    font-weight: 900;
+    letter-spacing: 1px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+    border: 4px solid #86efac;
   }
-  .brand-dot {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #fef08a;
+  .leaf-icon {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
   }
-  .bottom-content {
-    position: absolute;
-    left: 64px;
-    right: 64px;
-    bottom: 130px;
+  .headline-wrap {
     display: flex;
     flex-direction: column;
-    gap: 28px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
   }
-  .accent-line {
-    width: 120px;
-    height: 10px;
-    border-radius: 6px;
-    background: linear-gradient(90deg, #facc15, #34d399);
-  }
-  .headline {
-    color: #fef08a;
-    font-size: 84px;
+  .headline-yellow {
+    color: #fde047;
+    font-size: 112px;
     font-weight: 900;
-    line-height: 1.18;
+    line-height: 1.08;
+    -webkit-text-stroke: 5px #052e16;
     text-shadow:
-      0 6px 0 rgba(0, 0, 0, 0.85),
-      0 14px 36px rgba(0, 0, 0, 0.78);
-    letter-spacing: -0.5px;
-    word-break: break-word;
+      0 8px 0 #052e16,
+      0 14px 28px rgba(0, 0, 0, 0.65);
+    letter-spacing: -1px;
   }
-  .subtitle-box {
+  .headline-white {
+    color: #ffffff;
+    font-size: 92px;
+    font-weight: 900;
+    line-height: 1.12;
+    -webkit-text-stroke: 4px #052e16;
+    text-shadow:
+      0 7px 0 #052e16,
+      0 12px 24px rgba(0, 0, 0, 0.62);
+    letter-spacing: -0.5px;
+  }
+  .red-ribbon {
     display: inline-flex;
     align-items: center;
-    align-self: flex-start;
-    background: rgba(255, 255, 255, 0.14);
-    border-left: 8px solid #34d399;
-    padding: 18px 30px;
-    border-radius: 14px;
-    color: #f8fafc;
-    font-size: 34px;
-    font-weight: 700;
+    justify-content: center;
+    background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+    color: #ffffff;
+    padding: 16px 40px;
+    border-radius: 18px;
+    font-size: 40px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    border: 4px solid #fef08a;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    margin-top: 6px;
   }
 </style>
 </head>
 <body>
   ${bgDataUri ? `<img class="bg-photo" src="${bgDataUri}" />` : ''}
-  <div class="vignette"></div>
-  <div class="top-bar">
+  <div class="sunny-top-glow"></div>
+  <div class="sunflare"></div>
+  <div class="sunflare-right"></div>
+
+  <div class="header-stack">
     <div class="brand-pill">
-      <span class="brand-dot"></span>
+      <svg class="leaf-icon" viewBox="0 0 24 24" fill="none">
+        <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22L6.66 19.7C7.14 19.87 7.64 20 8 20C19 20 22 3 22 3C21 5 14 5.25 9 6.25C4 7.25 2 11.5 2 13.5C2 15.5 3.75 17.25 3.75 17.25C7 8 17 8 17 8Z" fill="#16a34a"/>
+      </svg>
       <span>${safeChannel}</span>
     </div>
-  </div>
-  <div class="bottom-content">
-    <div class="accent-line"></div>
-    <div class="headline">${safeHeadline}</div>
-    <div class="subtitle-box">${safeSubtitle}</div>
+
+    <div class="headline-wrap">
+      <div class="headline-yellow">${safeTop}</div>
+      ${safeBottom ? `<div class="headline-white">${safeBottom}</div>` : ''}
+    </div>
+
+    ${safeBadgeRed ? `<div class="red-ribbon">${safeBadgeRed}</div>` : ''}
   </div>
 </body>
 </html>`;

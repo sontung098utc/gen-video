@@ -44,10 +44,11 @@ class Agent6PhotographicThumbnailService
         }
         // Dọn sạch mọi thẻ kỹ thuật trước khi vẽ lên ảnh bìa
         $headline = trim((string) preg_replace('/@\{[a-zA-Z0-9_:\-]+\}|\[[^\]]+\]/u', '', $headline));
+        $badgeRed = trim((string) ($seoMeta['cover_badge_red'] ?? ''));
 
         $channelName = AppSetting::getValue('channel_name', 'Sống Khỏe Mỗi Ngày');
         $bgPrompt = trim((string) ($seoMeta['thumbnail_visual_prompt']
-            ?? 'Photorealistic warm daylight studio photography of healthy East Asian lifestyle, fresh herbal tea, natural herbs and organic food, shallow depth of field, clean editorial composition, no text, no watermark'));
+            ?? 'Bright sunlit editorial studio food and herbal photography of healthy green vegetables, fresh herbs and warm herbal tea on a rustic wooden table, blurred sunny green garden bokeh background at top, vibrant natural colors, no text, no watermark'));
 
         $bgTempPath = storage_path("app/temp/project_{$project->id}_cover_bg.jpg");
         $this->ensureParentDirectory($bgTempPath);
@@ -63,7 +64,7 @@ class Agent6PhotographicThumbnailService
             outputPath: $thumbFull,
             headline: $headline,
             channelName: $channelName,
-            subtitle: 'Kiến Thức Sức Khỏe Chính Thống'
+            badgeRed: $badgeRed
         );
 
         if (! $rendered && $bgReady && is_file($bgTempPath)) {
@@ -267,7 +268,7 @@ class Agent6PhotographicThumbnailService
         string $outputPath,
         string $headline,
         string $channelName,
-        string $subtitle
+        string $badgeRed
     ): bool {
         $scriptPath = base_path('scripts/render_health_thumbnail.mjs');
         if (! is_file($scriptPath)) {
@@ -282,7 +283,7 @@ class Agent6PhotographicThumbnailService
             'outputPath' => $outputPath,
             'headline' => $headline,
             'channelName' => $channelName,
-            'subtitle' => $subtitle,
+            'badgeRed' => $badgeRed,
         ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         $nodeBinary = (string) config('services.node.binary', 'node');
