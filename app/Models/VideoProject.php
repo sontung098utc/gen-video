@@ -50,11 +50,20 @@ class VideoProject extends Model
         'status',
         'workflow_mode',
         'cost_tier_mode',
+        'voice_provider',
         'voice_id',
         'voice_name',
+        'voice_speed',
+        'subtitle_enabled',
+        'subtitle_style',
         'master_style_prompt',
         'bgm_file_path',
         'final_video_path',
+        'thumbnail_path',
+        'qa_status',
+        'qa_attempts',
+        'health_plan_item_id',
+        'seo_meta_json',
         'total_duration_ms',
         'total_cost_usd',
         'error_message',
@@ -84,6 +93,10 @@ class VideoProject extends Model
             'status' => ProjectStatus::class,
             'workflow_mode' => WorkflowMode::class,
             'cost_tier_mode' => CostTierMode::class,
+            'voice_speed' => 'float',
+            'subtitle_enabled' => 'boolean',
+            'qa_attempts' => 'integer',
+            'seo_meta_json' => 'array',
             'total_duration_ms' => 'integer',
             'total_cost_usd' => 'float',
         ];
@@ -111,6 +124,30 @@ class VideoProject extends Model
     public function generationLogs(): HasMany
     {
         return $this->hasMany(GenerationLog::class, 'video_project_id')->latest();
+    }
+
+    /**
+     * Quan hệ 1-N: Lịch sử phiếu kiểm duyệt của Trưởng phòng Agent AI 8.
+     */
+    public function qaReviews(): HasMany
+    {
+        return $this->hasMany(AgentQaReview::class, 'video_project_id')->latest('attempt_number');
+    }
+
+    /**
+     * Quan hệ 1-1: Phiếu kiểm duyệt mới nhất của Agent AI 8.
+     */
+    public function latestQaReview(): HasOne
+    {
+        return $this->hasOne(AgentQaReview::class, 'video_project_id')->latestOfMany('attempt_number');
+    }
+
+    /**
+     * Quan hệ 1-1: Mục kế hoạch nội dung liên kết (nếu tạo từ Kế hoạch Tháng/Tuần/Ngày).
+     */
+    public function planItem(): HasOne
+    {
+        return $this->hasOne(HealthPlanItem::class, 'video_project_id');
     }
 
     /**
