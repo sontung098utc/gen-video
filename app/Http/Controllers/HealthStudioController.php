@@ -245,10 +245,10 @@ class HealthStudioController extends Controller
 
         $isProcessing = in_array($project->status, [
             ProjectStatus::DRAFT,
-            ProjectStatus::GENERATING_SCRIPT,
-            ProjectStatus::GENERATING_VOICE,
+            ProjectStatus::SCRIPTING,
+            ProjectStatus::GENERATING_AUDIO,
             ProjectStatus::GENERATING_VISUALS,
-            ProjectStatus::RENDERING_FINAL,
+            ProjectStatus::RENDERING,
         ], true) && $project->qa_status !== 'failed';
 
         return view('health.studio', [

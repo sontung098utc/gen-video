@@ -63,7 +63,7 @@ class RunHealth8AgentPipelineJob implements ShouldQueue
 
         try {
             $project->update([
-                'status' => ProjectStatus::GENERATING_SCRIPT,
+                'status' => ProjectStatus::SCRIPTING,
                 'qa_status' => 'running',
                 'error_message' => null,
             ]);
@@ -166,12 +166,12 @@ class RunHealth8AgentPipelineJob implements ShouldQueue
         }
 
         if (in_array('agent3', $targets, true) || $project->scenes()->count() === 0) {
-            $project->update(['status' => ProjectStatus::GENERATING_SCRIPT]);
+            $project->update(['status' => ProjectStatus::SCRIPTING]);
             $project = $agent3->writeScriptForProject($project, $planItem, $feedback);
         }
 
         if (in_array('agent5', $targets, true)) {
-            $project->update(['status' => ProjectStatus::GENERATING_VOICE]);
+            $project->update(['status' => ProjectStatus::GENERATING_AUDIO]);
             $project = $agent5->synthesizeProjectVoice($project, $forceRebuild);
         }
 
@@ -185,7 +185,7 @@ class RunHealth8AgentPipelineJob implements ShouldQueue
         }
 
         if (in_array('agent7', $targets, true)) {
-            $project->update(['status' => ProjectStatus::RENDERING_FINAL]);
+            $project->update(['status' => ProjectStatus::RENDERING]);
             $agent7->composeProjectVideo($project);
         }
     }
