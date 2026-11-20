@@ -104,7 +104,7 @@ class Agent7CapCutCompositorService
                 $transitionTypes[] = $trans;
 
                 // Chèn SFX chuyển cảnh nhẹ nhàng đúng mốc chuyển cảnh
-                $transSfx = $this->sfxMatcher->resolveLocalSfxPath($scene->sfx_prompt ?: 'whoosh');
+                $transSfx = $this->sfxMatcher->matchSfxForScene($scene->sfx_prompt ?: 'whoosh');
                 if ($transSfx !== null && is_file($transSfx)) {
                     $sfxTimeline[] = [
                         'file_path' => $transSfx,
@@ -121,13 +121,13 @@ class Agent7CapCutCompositorService
                     'offset_ms' => $cursorMs,
                 ];
 
-                $wordSfx = $this->wordTimeline->buildSfxTimelineForScene(
+                $anchors = $this->wordTimeline->extractWordAnchors(
                     taggedNarration: (string) $scene->narration_text,
                     vttFullPath: $vttFull,
-                    sceneStartOffsetMs: $cursorMs,
+                    sceneOffsetMs: $cursorMs,
                     sceneDurationMs: $sceneDurationMs
                 );
-                foreach ($wordSfx as $item) {
+                foreach ($anchors['sfx_events'] ?? [] as $item) {
                     $sfxTimeline[] = $item;
                 }
             }
