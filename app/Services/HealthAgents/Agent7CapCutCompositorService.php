@@ -192,9 +192,9 @@ class Agent7CapCutCompositorService
             );
 
             $this->compositor->burnSubtitles(
-                inputVideoPath: $mixedVideoPath,
+                videoPath: $mixedVideoPath,
                 assSubtitlePath: $assPath,
-                outputVideoPath: $finalFullPath
+                finalOutputPath: $finalFullPath
             );
         } else {
             copy($mixedVideoPath, $finalFullPath);
