@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\HealthAgents;
 
 use App\Models\AppSetting;
+use App\Models\CustomVoice;
 use App\Models\GenerationLog;
 use App\Models\StoryboardScene;
 use App\Models\VideoProject;
@@ -35,13 +36,13 @@ class Agent5MultiVoiceStudioService
     ) {}
 
     /**
-     * Danh mục giọng đọc có sẵn theo từng nhà cung cấp cho giao diện Web Studio.
+     * Danh mục giọng đọc có sẵn + Giọng đọc tùy chỉnh đã lưu theo từng nhà cung cấp.
      *
      * @return array<string, array{label: string, voices: array<string, string>}>
      */
     public static function catalog(): array
     {
-        return [
+        $catalog = [
             'edge_tts' => [
                 'label' => 'Microsoft Edge Neural (Miễn phí — Sẵn dùng)',
                 'voices' => [
@@ -61,7 +62,7 @@ class Agent5MultiVoiceStudioService
                 ],
             ],
             'vbee' => [
-                'label' => 'Vbee / Vivibe AI (Cần App ID & Token)',
+                'label' => 'Vivibe / Vbee AI (Cần App ID & Token)',
                 'voices' => [
                     'hn_female_ngochuyen_full_48k-fhg' => 'Vbee Ngọc Huyền (Nữ Hà Nội — Truyền cảm)',
                     'hn_male_manhdung_news_48k-fhg' => 'Vbee Mạnh Dũng (Nam Hà Nội — Tin tức y khoa)',
@@ -70,14 +71,38 @@ class Agent5MultiVoiceStudioService
                 ],
             ],
             'genmax' => [
-                'label' => 'GenMax.io Voices (Cần GenMax API Key)',
+                'label' => 'GenMax - CapCut (Cần GenMax API Key)',
                 'voices' => [
                     'genmax_vi_female_warm' => 'GenMax Nữ Sức Khỏe (Ấm áp)',
                     'genmax_vi_male_expert' => 'GenMax Nam Chuyên Gia (Tin cậy)',
-                    'custom' => 'Nhập Voice ID tùy chỉnh từ genmax.io/app/voices',
                 ],
             ],
         ];
+
+        // Gộp toàn bộ giọng đọc tùy chỉnh theo Voice ID mà người dùng đã lưu vào đầu từng nhà cung cấp
+        try {
+            $customVoices = CustomVoice::query()
+                ->where('is_active', true)
+                ->latest()
+                ->get();
+
+            foreach ($customVoices as $cv) {
+                if (isset($catalog[$cv->provider])) {
+                    $catalog[$cv->provider]['voices'] = [
+                        $cv->voice_id => "★ {$cv->name} ({$cv->voice_id})",
+                    ] + $catalog[$cv->provider]['voices'];
+                }
+            }
+        } catch (Throwable) {
+            // Bỏ qua nếu bảng custom_voices chưa được migrate
+        }
+
+        // Cho phép nhập nhanh Voice ID trực tiếp nếu cần
+        foreach ($catalog as $prov => $meta) {
+            $catalog[$prov]['voices']['custom'] = '+ Nhập nhanh Voice ID khác...';
+        }
+
+        return $catalog;
     }
 
     /**

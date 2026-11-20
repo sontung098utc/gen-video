@@ -10,6 +10,7 @@ use App\Enums\ProjectType;
 use App\Enums\WorkflowMode;
 use App\Jobs\RunHealth8AgentPipelineJob;
 use App\Models\AppSetting;
+use App\Models\CustomVoice;
 use App\Models\HealthContentPlan;
 use App\Models\HealthKnowledgeDocument;
 use App\Models\HealthPlanItem;
@@ -92,7 +93,7 @@ class HealthStudioController extends Controller
             'aspect_ratio' => '9:16',
             'status' => ProjectStatus::DRAFT,
             'workflow_mode' => WorkflowMode::AUTO,
-            'cost_tier_mode' => CostTierMode::ECO,
+            'cost_tier_mode' => CostTierMode::ECO_MODE,
             'voice_provider' => $validated['voice_provider'],
             'voice_id' => $voiceId,
             'voice_speed' => (float) $validated['voice_speed'],
@@ -203,7 +204,7 @@ class HealthStudioController extends Controller
             'aspect_ratio' => '9:16',
             'status' => ProjectStatus::DRAFT,
             'workflow_mode' => WorkflowMode::AUTO,
-            'cost_tier_mode' => CostTierMode::ECO,
+            'cost_tier_mode' => CostTierMode::ECO_MODE,
             'voice_provider' => $voiceProvider,
             'voice_id' => $voiceId,
             'voice_speed' => $voiceSpeed,
@@ -501,10 +502,13 @@ class HealthStudioController extends Controller
             $values[$key] = $meta['is_secret'] ? '' : $val;
         }
 
+        $customVoices = CustomVoice::query()->latest()->get();
+
         return view('health.settings', [
             'defs' => $defs,
             'values' => $values,
             'hasValue' => $hasValue,
+            'customVoices' => $customVoices,
         ]);
     }
 
@@ -529,5 +533,42 @@ class HealthStudioController extends Controller
         return redirect()
             ->route('health.settings')
             ->with('status', 'Đã lưu cấu hình kênh Sống Khỏe Mỗi Ngày và toàn bộ API Keys an toàn!');
+    }
+
+    /**
+     * Thêm giọng đọc tùy chỉnh mới bằng Voice ID cho từng nhà cung cấp (GenMax, Vivibe/Vbee, Google TTS, Edge).
+     */
+    public function storeCustomVoice(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'voice_id' => ['required', 'string', 'max:150'],
+            'provider' => ['required', 'string', 'in:genmax,vbee,google_tts,edge_tts'],
+        ]);
+
+        CustomVoice::query()->updateOrCreate(
+            [
+                'provider' => $validated['provider'],
+                'voice_id' => trim((string) $validated['voice_id']),
+            ],
+            [
+                'name' => trim((string) $validated['name']),
+                'is_active' => true,
+            ]
+        );
+
+        return redirect()
+            ->route('health.settings')
+            ->with('status', "Đã lưu giọng đọc \"{$validated['name']}\" (ID: {$validated['voice_id']})! Bạn có thể chọn ngay giọng này khi tạo video.");
+    }
+
+    public function deleteCustomVoice(int $id): RedirectResponse
+    {
+        $voice = CustomVoice::query()->findOrFail($id);
+        $voice->delete();
+
+        return redirect()
+            ->route('health.settings')
+            ->with('status', "Đã xóa giọng đọc \"{$voice->name}\" khỏi danh sách.");
     }
 }

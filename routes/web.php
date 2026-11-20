@@ -42,9 +42,11 @@ Route::delete('/stock-library/{id}', [HealthStudioController::class, 'deleteStoc
 Route::get('/qa-rules', [HealthStudioController::class, 'qaRules'])->name('health.qa-rules');
 Route::post('/qa-rules', [HealthStudioController::class, 'updateQaRules'])->name('health.qa-rules.update');
 
-// Cài Đặt Kênh & API Keys (Google TTS, Vbee, GenMax, Pexels, Pixabay, Gemini, Fal)
+// Cài Đặt Kênh & API Keys (Google TTS, Vbee, GenMax, Pexels, Pixabay, Gemini, ChatGPT, Muse AI)
 Route::get('/settings', [HealthStudioController::class, 'settings'])->name('health.settings');
 Route::post('/settings', [HealthStudioController::class, 'updateSettings'])->name('health.settings.update');
+Route::post('/settings/voices', [HealthStudioController::class, 'storeCustomVoice'])->name('health.settings.voices.store');
+Route::delete('/settings/voices/{id}', [HealthStudioController::class, 'deleteCustomVoice'])->whereNumber('id')->name('health.settings.voices.delete');
 
 // Giữ lại các route cũ tương thích ngược cho các dự án trước đó
 Route::get('/projects', [ProjectWebController::class, 'index'])->name('projects.index');

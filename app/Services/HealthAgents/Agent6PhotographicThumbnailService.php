@@ -83,35 +83,30 @@ class Agent6PhotographicThumbnailService
 
     private function generatePhotographicBackground(VideoProject $project, string $prompt, string $destPath): bool
     {
-        // 1. Nếu có Fal.ai API Key -> tạo ảnh chụp Photographic chuyên nghiệp không chứa chữ
-        $falKey = AppSetting::getValue('fal_api_key', (string) config('services.fal.api_key', ''));
-        if ($falKey !== '') {
-            try {
-                $response = Http::timeout(45)
-                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
-                    ->withHeaders(['Authorization' => 'Key ' . $falKey])
-                    ->post('https://fal.run/fal-ai/flux/schnell', [
-                        'prompt' => $prompt . ', photorealistic DSLR photography, natural lighting, 8k, no text, no letters, no watermark',
-                        'image_size' => 'portrait_16_9',
-                        'num_inference_steps' => 4,
-                        'num_images' => 1,
-                    ]);
+        $preferred = AppSetting::getValue('thumbnail_provider', 'openai');
+        $cleanPrompt = $prompt . ', photorealistic editorial DSLR photography, warm natural lighting, sharp focus, vertical 9:16 portrait composition, strictly NO text, NO words, NO letters, NO watermark';
 
-                if ($response->successful()) {
-                    $imgUrl = (string) data_get($response->json(), 'images.0.url', '');
-                    if ($imgUrl !== '') {
-                        $dl = Http::timeout(45)->sink($destPath)->get($imgUrl);
-                        if ($dl->successful() && is_file($destPath) && filesize($destPath) > 2048) {
-                            return true;
-                        }
-                    }
-                }
-            } catch (Throwable $e) {
-                Log::warning('[Agent6Thumbnail] Fal photographic background failed, using scene frame: ' . $e->getMessage());
+        // Xây dựng thứ tự ưu tiên theo lựa chọn của người dùng
+        $order = match ($preferred) {
+            'muse_ai' => ['muse_ai', 'openai', 'fal'],
+            'fal' => ['fal', 'openai', 'muse_ai'],
+            'scene_frame' => [],
+            default => ['openai', 'muse_ai', 'fal'],
+        };
+
+        foreach ($order as $provider) {
+            if ($provider === 'openai' && $this->tryOpenAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'muse_ai' && $this->tryMuseAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'fal' && $this->tryFalPhotographic($cleanPrompt, $destPath)) {
+                return true;
             }
         }
 
-        // 2. Fallback thông minh: lấy frame ảnh chụp thật đẹp nhất từ các phân cảnh video châu Á của Agent 4
+        // Fallback thông minh: lấy frame ảnh chụp thật đẹp nhất từ các phân cảnh video châu Á của Agent 4
         foreach ($project->scenes as $scene) {
             if ($scene->image_file_path && Storage::disk('public')->exists($scene->image_file_path)) {
                 $src = Storage::disk('public')->path($scene->image_file_path);
@@ -121,6 +116,147 @@ class Agent6PhotographicThumbnailService
                     return true;
                 }
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Sinh ảnh nền Photographic bằng ChatGPT / OpenAI Image API (`gpt-image-1` hoặc `dall-e-3`).
+     */
+    private function tryOpenAiPhotographic(string $prompt, string $destPath): bool
+    {
+        $apiKey = AppSetting::getValue('openai_api_key', '');
+        if ($apiKey === '') {
+            return false;
+        }
+
+        $model = AppSetting::getValue('openai_image_model', 'gpt-image-1');
+        $payload = [
+            'model' => $model,
+            'prompt' => $prompt,
+            'n' => 1,
+            'size' => $model === 'dall-e-3' ? '1024x1792' : '1024x1536',
+        ];
+        if ($model === 'dall-e-3') {
+            $payload['quality'] = 'standard';
+            $payload['style'] = 'natural';
+        }
+
+        try {
+            $response = Http::timeout(90)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
+                ->acceptJson()
+                ->post('https://api.openai.com/v1/images/generations', $payload);
+
+            if (! $response->successful()) {
+                Log::warning('[Agent6Thumbnail] OpenAI Image API HTTP ' . $response->status() . ': ' . mb_substr($response->body(), 0, 250));
+
+                return false;
+            }
+
+            $b64 = (string) data_get($response->json(), 'data.0.b64_json', '');
+            if ($b64 !== '') {
+                file_put_contents($destPath, base64_decode($b64));
+
+                return is_file($destPath) && filesize($destPath) > 2048;
+            }
+
+            $url = (string) data_get($response->json(), 'data.0.url', '');
+            if ($url !== '') {
+                $dl = Http::timeout(60)->sink($destPath)->get($url);
+
+                return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] OpenAI error: ' . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Sinh ảnh nền Photographic bằng Muse AI API (hỗ trợ Custom Endpoint & cả URL lẫn Base64).
+     */
+    private function tryMuseAiPhotographic(string $prompt, string $destPath): bool
+    {
+        $apiKey = AppSetting::getValue('muse_ai_api_key', '');
+        $endpoint = AppSetting::getValue('muse_ai_endpoint', 'https://api.museai.io/v1/images/generations');
+        if ($apiKey === '' || $endpoint === '') {
+            return false;
+        }
+
+        try {
+            $response = Http::timeout(90)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders([
+                    'Authorization' => 'Bearer ' . $apiKey,
+                    'x-api-key' => $apiKey,
+                ])
+                ->acceptJson()
+                ->post($endpoint, [
+                    'prompt' => $prompt,
+                    'aspect_ratio' => '9:16',
+                    'style' => 'photographic',
+                    'n' => 1,
+                ]);
+
+            if (! $response->successful()) {
+                Log::warning('[Agent6Thumbnail] Muse AI HTTP ' . $response->status() . ': ' . mb_substr($response->body(), 0, 250));
+
+                return false;
+            }
+
+            $json = $response->json();
+            $b64 = (string) (data_get($json, 'data.0.b64_json') ?: data_get($json, 'image_base64') ?: '');
+            if ($b64 !== '') {
+                file_put_contents($destPath, base64_decode($b64));
+
+                return is_file($destPath) && filesize($destPath) > 2048;
+            }
+
+            $url = (string) (data_get($json, 'data.0.url') ?: data_get($json, 'images.0.url') ?: data_get($json, 'image_url') ?: data_get($json, 'url') ?: '');
+            if ($url !== '') {
+                $dl = Http::timeout(60)->sink($destPath)->get($url);
+
+                return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] Muse AI error: ' . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    private function tryFalPhotographic(string $prompt, string $destPath): bool
+    {
+        $falKey = AppSetting::getValue('fal_api_key', (string) config('services.fal.api_key', ''));
+        if ($falKey === '') {
+            return false;
+        }
+
+        try {
+            $response = Http::timeout(45)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders(['Authorization' => 'Key ' . $falKey])
+                ->post('https://fal.run/fal-ai/flux/schnell', [
+                    'prompt' => $prompt,
+                    'image_size' => 'portrait_16_9',
+                    'num_inference_steps' => 4,
+                    'num_images' => 1,
+                ]);
+
+            if ($response->successful()) {
+                $imgUrl = (string) data_get($response->json(), 'images.0.url', '');
+                if ($imgUrl !== '') {
+                    $dl = Http::timeout(45)->sink($destPath)->get($imgUrl);
+
+                    return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+                }
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] Fal error: ' . $e->getMessage());
         }
 
         return false;
