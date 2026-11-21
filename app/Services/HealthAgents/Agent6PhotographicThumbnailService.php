@@ -64,7 +64,15 @@ class Agent6PhotographicThumbnailService
 
         $mode = AppSetting::getValue('thumbnail_mode', 'hybrid');
         if ($mode === 'full_ai_poster') {
-            $posterPrompt = "Create a vibrant 9:16 vertical Vietnamese health YouTube Shorts / TikTok cover poster for channel '{$channelName}'. Top section: sunny bright green leaves bokeh background with a small white rounded badge reading '{$channelName}' at top center, giant bold yellow uppercase headline with thick black outline reading '{$headline}', and a red pill banner reading '{$badgeRed}'. Bottom half: crisp photorealistic editorial photography of: {$bgPrompt}. Ensure Vietnamese text spelling is exact and ultra sharp.";
+            $posterPrompt = "Create a vibrant 9:16 vertical Vietnamese health infographic poster for channel '{$channelName}' matching this exact layout:
+1. Top-left: small green leaf-person wellness logo with text 'SỐNG KHỎE MỖI NGÀY' on a bright sunlit green-leaf bokeh background.
+2. Upper hero (top 38%): expressive photorealistic Vietnamese/East Asian person or clear subject ({$bgPrompt}) with a small red triangle '!' warning icon.
+3. Center typography stack (3 slightly tilted horizontal paint-brush stroke banners):
+   - Top red brush banner with bold white italic text: '{$badgeRed}'
+   - Middle bright yellow brush banner with giant dark-green bold italic text: '{$headline}'
+   - Bottom dark-green brush banner with bold white italic text + red underline swoop.
+4. Bottom row: 4 small circular yellow-bordered photographic thumbnails illustrating the key points, above a smooth layered green wave footer with fresh green leaves at bottom-left.
+Ensure Vietnamese spelling is 100% accurate and crisp.";
             $posterReady = $this->generatePhotographicBackground($project, $posterPrompt, $thumbFull, true);
             if ($posterReady && is_file($thumbFull)) {
                 $project->update(['thumbnail_path' => $thumbRel]);
@@ -73,17 +81,32 @@ class Agent6PhotographicThumbnailService
             }
         }
 
-        $bgTempPath = storage_path("app/temp/project_{$project->id}_cover_bg.jpg");
+        $bgTempPath = storage_path("app/temp/project_{$project->id}_cover_bg_" . uniqid() . '.jpg');
         $this->ensureParentDirectory($bgTempPath);
 
         $bgReady = $this->generatePhotographicBackground($project, $bgPrompt, $bgTempPath, false);
+
+        // Lấy tối đa 4 ảnh phân cảnh từ Agent 4 để hiển thị 4 vòng tròn minh họa ở chân ảnh bìa
+        $circleImages = [];
+        foreach ($project->scenes as $scene) {
+            if ($scene->image_file_path && $disk->exists($scene->image_file_path)) {
+                $full = $disk->path($scene->image_file_path);
+                if (is_file($full) && filesize($full) > 1024) {
+                    $circleImages[] = $full;
+                }
+            }
+            if (count($circleImages) >= 4) {
+                break;
+            }
+        }
 
         $rendered = $this->renderTypographyOverlay(
             bgImagePath: $bgReady ? $bgTempPath : null,
             outputPath: $thumbFull,
             headline: $headline,
             channelName: $channelName,
-            badgeRed: $badgeRed
+            badgeRed: $badgeRed,
+            circleImages: $circleImages
         );
 
         if (! $rendered && $bgReady && is_file($bgTempPath)) {
@@ -590,7 +613,8 @@ class Agent6PhotographicThumbnailService
         string $outputPath,
         string $headline,
         string $channelName,
-        string $badgeRed
+        string $badgeRed,
+        array $circleImages = []
     ): bool {
         $scriptPath = base_path('scripts/render_health_thumbnail.mjs');
         if (! is_file($scriptPath)) {
@@ -606,6 +630,7 @@ class Agent6PhotographicThumbnailService
             'headline' => $headline,
             'channelName' => $channelName,
             'badgeRed' => $badgeRed,
+            'circleImages' => $circleImages,
         ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         $nodeBinary = (string) config('services.node.binary', 'node');

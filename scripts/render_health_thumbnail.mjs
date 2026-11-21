@@ -5,12 +5,16 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 /**
- * Render ảnh bìa Photographic chuẩn 1080x1920 theo đúng nhận diện kênh "Sống Khỏe Mỗi Ngày":
- *  - Nền trên: Ánh nắng xanh lá tươi sáng tràn đầy sức sống (sunny green bokeh).
- *  - Logo trên cùng: Badge trắng bo tròn + 2 lá xanh + chữ "SỐNG KHỎE MỖI NGÀY".
- *  - Phần trên-giữa: Tiêu đề IN HOA cực to, màu VÀNG RỰC & TRẮNG có viền đen dày nổi bật.
- *  - Dải ruy-băng đỏ nhấn mạnh ngay dưới tiêu đề chính.
- *  - Nửa dưới: Ảnh chụp Photographic thực tế sắc nét, tươi sáng.
+ * Render ảnh bìa chuẩn 1080x1920 học hỏi 100% phong cách Poster ChatGPT của kênh "Sống Khỏe Mỗi Ngày":
+ *  1. Logo góc trên trái (vòng tròn lá xanh + chữ SỐNG KHỎE / MỖI NGÀY) trên nền ánh nắng xanh tươi.
+ *  2. Ảnh Hero Photographic phía trên (kèm icon tam giác cảnh báo đỏ "!").
+ *  3. Cụm 3 dải sơn quét cọ (Brush Stroke) nghiêng nhẹ cực bắt mắt:
+ *     - Dải ĐỎ: chữ TRẮNG ("CẢNH BÁO!" hoặc từ nhấn)
+ *     - Dải VÀNG: chữ XANH LÁ ĐẬM cực to (cụm từ chính, vd: "5 DẤU HIỆU")
+ *     - Dải XANH RÊU ĐẬM: chữ TRẮNG (vế sau, vd: "TIỀN TIỂU ĐƯỜNG")
+ *     - Dòng chữ ĐỎ nghiêng + đường gạch chân cong đỏ ("đừng chủ quan" / "người lớn tuổi hay bỏ qua")
+ *  4. Hàng 4 ảnh tròn viền vàng minh họa các ý chính từ phân cảnh video.
+ *  5. Sóng xanh lá tầng lớp + lá xanh tươi ở chân trang.
  */
 function findBrowserBinary() {
     const candidates = process.platform === 'win32'
@@ -36,16 +40,32 @@ function findBrowserBinary() {
     return null;
 }
 
-function splitHeadlineForImpact(rawHeadline) {
+function toDataUri(filePath) {
+    if (!filePath || !fs.existsSync(filePath)) return '';
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
+    const b64 = fs.readFileSync(filePath).toString('base64');
+    return `data:${mime};base64,${b64}`;
+}
+
+function splitHeadlineForBrushes(rawHeadline) {
     const words = String(rawHeadline || '').trim().toUpperCase().split(/\s+/).filter(Boolean);
     if (words.length <= 2) {
-        return { top: words.join(' '), bottom: '' };
+        return { yellow: words.join(' '), green: '' };
     }
-    const splitAt = Math.min(3, Math.ceil(words.length / 2));
+    const splitAt = words.length >= 5 ? 3 : Math.ceil(words.length / 2);
     return {
-        top: words.slice(0, splitAt).join(' '),
-        bottom: words.slice(splitAt).join(' '),
+        yellow: words.slice(0, splitAt).join(' '),
+        green: words.slice(splitAt).join(' '),
     };
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 function main() {
@@ -66,34 +86,27 @@ function main() {
     const {
         bgImagePath = '',
         outputPath,
-        headline = '5 SAI LẦM KHI CHĂM SÓC SỨC KHỎE',
+        headline = '5 DẤU HIỆU TIỀN TIỂU ĐƯỜNG',
         channelName = 'Sống Khỏe Mỗi Ngày',
-        badgeRed = '',
+        badgeRed = 'ĐỪNG CHỦ QUAN',
+        circleImages = [],
     } = payload;
 
-    let bgDataUri = '';
-    if (bgImagePath && fs.existsSync(bgImagePath)) {
-        const ext = path.extname(bgImagePath).toLowerCase();
-        const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
-        const b64 = fs.readFileSync(bgImagePath).toString('base64');
-        bgDataUri = `data:${mime};base64,${b64}`;
-    }
+    const bgDataUri = toDataUri(bgImagePath);
+    const circleUris = (Array.isArray(circleImages) ? circleImages : [])
+        .map(toDataUri)
+        .filter(Boolean)
+        .slice(0, 4);
 
-    const escapeHtml = (str) =>
-        String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+    const chWords = String(channelName).trim().toUpperCase().split(/\s+/);
+    const chLine1 = escapeHtml(chWords.slice(0, 2).join(' '));
+    const chLine2 = escapeHtml(chWords.slice(2).join(' ') || 'MỖI NGÀY');
 
-    const parts = splitHeadlineForImpact(headline);
-    const wordCount = String(headline || '').trim().split(/\s+/).filter(Boolean).length;
-    const yellowSize = wordCount > 7 ? 84 : (wordCount > 5 ? 98 : 114);
-    const whiteSize = wordCount > 7 ? 72 : (wordCount > 5 ? 84 : 94);
-    const safeTop = escapeHtml(parts.top);
-    const safeBottom = escapeHtml(parts.bottom);
-    const safeChannel = escapeHtml(channelName.toUpperCase());
-    const safeBadgeRed = escapeHtml((badgeRed || '').toUpperCase());
+    const parts = splitHeadlineForBrushes(headline);
+    const safeHookRed = 'CẢNH BÁO!';
+    const safeYellow = escapeHtml(parts.yellow);
+    const safeGreen = escapeHtml(parts.green);
+    const safeSubRed = escapeHtml((badgeRed || 'người lớn tuổi hay bỏ qua').toLowerCase());
 
     const html = `<!DOCTYPE html>
 <html lang="vi">
@@ -101,7 +114,7 @@ function main() {
 <meta charset="UTF-8" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,800;0,900;1,800;1,900&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
@@ -110,182 +123,274 @@ function main() {
     overflow: hidden;
     font-family: 'Montserrat', 'Segoe UI', 'Arial', sans-serif;
     position: relative;
-    background: linear-gradient(180deg, #dcfce7 0%, #86efac 32%, #166534 100%);
+    background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 55%, #dcfce7 100%);
   }
-  .bg-photo {
+
+  .hero-zone {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 920px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 50%, #fef9c3 100%);
+  }
+  .hero-photo {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    filter: brightness(1.06) contrast(1.06) saturate(1.15);
+    object-position: center top;
+    filter: brightness(1.04) contrast(1.05) saturate(1.1);
   }
-  /* Lớp phủ ánh nắng xanh tươi ở nửa trên để chữ vàng-trắng nổi bật rực rỡ, giữ nửa dưới ảnh chụp sắc nét */
-  .sunny-top-glow {
+  .hero-fade {
     position: absolute;
     inset: 0;
     background: linear-gradient(
       180deg,
-      rgba(22, 101, 52, 0.78) 0%,
-      rgba(34, 197, 94, 0.56) 26%,
-      rgba(134, 239, 172, 0.28) 46%,
-      rgba(0, 0, 0, 0.00) 60%,
-      rgba(0, 0, 0, 0.14) 100%
+      rgba(255, 255, 255, 0.25) 0%,
+      rgba(255, 255, 255, 0) 28%,
+      rgba(255, 255, 255, 0.72) 78%,
+      #ffffff 100%
     );
   }
-  .sunflare {
+
+  .top-logo {
     position: absolute;
-    top: -120px;
-    left: -80px;
-    width: 560px;
-    height: 560px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(254, 249, 195, 0.72) 0%, rgba(254, 249, 195, 0) 70%);
-    pointer-events: none;
-  }
-  .sunflare-right {
-    position: absolute;
-    top: 40px;
-    right: -120px;
-    width: 480px;
-    height: 480px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(187, 247, 208, 0.55) 0%, rgba(187, 247, 208, 0) 70%);
-    pointer-events: none;
-  }
-  /* Khung lá xanh tươi sáng góc trên giống ảnh bìa mẫu Sống Khỏe Mỗi Ngày */
-  .leaf-corner-left {
-    position: absolute;
-    top: -30px;
-    left: -30px;
-    width: 340px;
-    height: 340px;
-    z-index: 6;
-    opacity: 0.92;
-    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
-    pointer-events: none;
-  }
-  .leaf-corner-right {
-    position: absolute;
-    top: -30px;
-    right: -30px;
-    width: 340px;
-    height: 340px;
-    z-index: 6;
-    opacity: 0.92;
-    transform: scaleX(-1);
-    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
-    pointer-events: none;
-  }
-  .header-stack {
-    position: relative;
-    z-index: 10;
-    padding: 64px 52px 0 52px;
+    top: 38px;
+    left: 38px;
+    z-index: 20;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 20px;
-  }
-  .brand-pill {
-    display: inline-flex;
     align-items: center;
     gap: 14px;
-    background: #ffffff;
-    color: #14532d;
-    padding: 14px 34px;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 12px 24px 12px 14px;
     border-radius: 999px;
-    font-size: 32px;
-    font-weight: 900;
-    letter-spacing: 1px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
-    border: 4px solid #86efac;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+    border: 2px solid #bbf7d0;
   }
-  .leaf-icon {
-    width: 34px;
-    height: 34px;
+  .logo-badge {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #16a34a, #065f46);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
+    border: 3px solid #fef08a;
   }
-  .headline-wrap {
+  .logo-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.08;
+    color: #065f46;
+    font-weight: 900;
+    font-size: 28px;
+    letter-spacing: 0.5px;
+  }
+
+  .warning-float {
+    position: absolute;
+    top: 230px;
+    left: 56px;
+    z-index: 18;
+    width: 150px;
+    height: 150px;
+    filter: drop-shadow(0 12px 24px rgba(185, 28, 28, 0.45));
+    transform: rotate(-8deg);
+  }
+
+  .brush-stack {
+    position: absolute;
+    top: 660px;
+    left: 24px;
+    right: 24px;
+    z-index: 25;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    width: 100%;
+    gap: 10px;
+    transform: rotate(-2.2deg);
   }
-  .headline-yellow {
-    color: #fde047;
-    font-size: ${yellowSize}px;
-    font-weight: 900;
-    line-height: 1.12;
-    paint-order: stroke fill;
-    -webkit-text-stroke: 16px #062c16;
-    text-shadow:
-      0 8px 0 #062c16,
-      0 14px 28px rgba(0, 0, 0, 0.55);
-    letter-spacing: -0.5px;
-  }
-  .headline-white {
-    color: #ffffff;
-    font-size: ${whiteSize}px;
-    font-weight: 900;
-    line-height: 1.16;
-    paint-order: stroke fill;
-    -webkit-text-stroke: 14px #062c16;
-    text-shadow:
-      0 7px 0 #062c16,
-      0 12px 24px rgba(0, 0, 0, 0.52);
-    letter-spacing: -0.3px;
-  }
-  .red-ribbon {
+  .brush-row {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+    padding: 20px 64px;
+    min-width: 740px;
+    max-width: 1010px;
+    text-align: center;
+  }
+  .brush-red {
+    background: linear-gradient(90deg, rgba(220,38,38,0) 0%, #dc2626 6%, #ef4444 50%, #dc2626 94%, rgba(220,38,38,0) 100%);
+    clip-path: polygon(2% 10%, 98% 2%, 100% 35%, 97% 62%, 99% 92%, 3% 98%, 0% 65%, 2% 35%);
+    padding: 18px 72px;
+    min-width: 680px;
+    box-shadow: 0 12px 24px rgba(185, 28, 28, 0.28);
+  }
+  .brush-red span {
     color: #ffffff;
-    padding: 16px 40px;
-    border-radius: 18px;
-    font-size: 40px;
+    font-size: 92px;
     font-weight: 900;
-    letter-spacing: 0.8px;
-    border: 4px solid #fef08a;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
-    margin-top: 6px;
+    font-style: italic;
+    line-height: 1.05;
+    text-shadow: 0 5px 12px rgba(0, 0, 0, 0.35);
+    letter-spacing: 1px;
+  }
+
+  .brush-yellow {
+    background: linear-gradient(90deg, rgba(250,204,21,0) 0%, #fde047 5%, #fef08a 50%, #facc15 95%, rgba(250,204,21,0) 100%);
+    clip-path: polygon(1% 4%, 99% 8%, 97% 42%, 100% 72%, 98% 96%, 2% 94%, 0% 62%, 3% 30%);
+    padding: 22px 68px;
+    min-width: 840px;
+    margin-top: -6px;
+  }
+  .brush-yellow span {
+    color: #064e3b;
+    font-size: 108px;
+    font-weight: 900;
+    font-style: italic;
+    line-height: 1.05;
+    letter-spacing: -1px;
+    text-shadow: 0 3px 0 rgba(255, 255, 255, 0.65);
+  }
+
+  .brush-green {
+    background: linear-gradient(90deg, rgba(6,78,59,0) 0%, #065f46 5%, #047857 50%, #064e3b 95%, rgba(6,78,59,0) 100%);
+    clip-path: polygon(2% 6%, 98% 3%, 100% 45%, 97% 75%, 99% 95%, 1% 97%, 3% 60%, 0% 28%);
+    padding: 20px 64px;
+    min-width: 880px;
+    margin-top: -6px;
+  }
+  .brush-green span {
+    color: #ffffff;
+    font-size: 76px;
+    font-weight: 900;
+    font-style: italic;
+    line-height: 1.08;
+    text-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  }
+
+  .subline-wrap {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .subline-red {
+    color: #dc2626;
+    font-size: 54px;
+    font-weight: 900;
+    font-style: italic;
+    line-height: 1.15;
+    text-shadow: 0 2px 0 #ffffff, 0 4px 12px rgba(255, 255, 255, 0.9);
+  }
+  .subline-swoosh {
+    width: 660px;
+    height: 22px;
+    margin-top: 4px;
+  }
+
+  .circles-row {
+    position: absolute;
+    bottom: 215px;
+    left: 42px;
+    right: 42px;
+    z-index: 22;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+  }
+  .circle-item {
+    width: 228px;
+    height: 228px;
+    border-radius: 50%;
+    border: 9px solid #fde047;
+    box-shadow: 0 10px 26px rgba(6, 78, 59, 0.28);
+    overflow: hidden;
+    background: #ecfdf5;
+    flex-shrink: 0;
+  }
+  .circle-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .footer-waves {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 220px;
+    z-index: 15;
+    pointer-events: none;
+  }
+  .footer-leaves {
+    position: absolute;
+    bottom: -10px;
+    left: -15px;
+    width: 260px;
+    height: 260px;
+    z-index: 26;
+    pointer-events: none;
+    filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.25));
   }
 </style>
 </head>
 <body>
-  ${bgDataUri ? `<img class="bg-photo" src="${bgDataUri}" />` : ''}
-  <div class="sunny-top-glow"></div>
-  <div class="sunflare"></div>
-  <div class="sunflare-right"></div>
-
-  <svg class="leaf-corner-left" viewBox="0 0 200 200" fill="none">
-    <path d="M10,10 C90,15 150,70 165,155 C95,140 35,90 10,10 Z" fill="#22c55e" opacity="0.88"/>
-    <path d="M0,45 C75,40 120,95 110,175 C50,150 15,105 0,45 Z" fill="#16a34a" opacity="0.9"/>
-    <path d="M40,0 C110,10 165,45 185,110 C120,95 70,55 40,0 Z" fill="#4ade80" opacity="0.78"/>
-  </svg>
-  <svg class="leaf-corner-right" viewBox="0 0 200 200" fill="none">
-    <path d="M10,10 C90,15 150,70 165,155 C95,140 35,90 10,10 Z" fill="#22c55e" opacity="0.88"/>
-    <path d="M0,45 C75,40 120,95 110,175 C50,150 15,105 0,45 Z" fill="#16a34a" opacity="0.9"/>
-    <path d="M40,0 C110,10 165,45 185,110 C120,95 70,55 40,0 Z" fill="#4ade80" opacity="0.78"/>
-  </svg>
-
-  <div class="header-stack">
-    <div class="brand-pill">
-      <svg class="leaf-icon" viewBox="0 0 24 24" fill="none">
-        <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22L6.66 19.7C7.14 19.87 7.64 20 8 20C19 20 22 3 22 3C21 5 14 5.25 9 6.25C4 7.25 2 11.5 2 13.5C2 15.5 3.75 17.25 3.75 17.25C7 8 17 8 17 8Z" fill="#16a34a"/>
-      </svg>
-      <span>${safeChannel}</span>
-    </div>
-
-    <div class="headline-wrap">
-      <div class="headline-yellow">${safeTop}</div>
-      ${safeBottom ? `<div class="headline-white">${safeBottom}</div>` : ''}
-    </div>
-
-    ${safeBadgeRed ? `<div class="red-ribbon">${safeBadgeRed}</div>` : ''}
+  <div class="hero-zone">
+    ${bgDataUri ? `<img class="hero-photo" src="${bgDataUri}" />` : ''}
+    <div class="hero-fade"></div>
   </div>
+
+  <div class="top-logo">
+    <div class="logo-badge">
+      <svg width="42" height="42" viewBox="0 0 24 24" fill="none">
+        <path d="M17 8C8 10 5.9 16.17 3.82 21.34L5.71 22L6.66 19.7C7.14 19.87 7.64 20 8 20C19 20 22 3 22 3C21 5 14 5.25 9 6.25C4 7.25 2 11.5 2 13.5C2 15.5 3.75 17.25 3.75 17.25C7 8 17 8 17 8Z" fill="#fef08a"/>
+      </svg>
+    </div>
+    <div class="logo-text">
+      <span>${chLine1}</span>
+      <span>${chLine2}</span>
+    </div>
+  </div>
+
+  <svg class="warning-float" viewBox="0 0 120 110" fill="none">
+    <path d="M60 6 L114 98 Q117 104 110 104 L10 104 Q3 104 6 98 Z" fill="#dc2626" stroke="#ffffff" stroke-width="6"/>
+    <rect x="55" y="34" width="10" height="36" rx="5" fill="#ffffff"/>
+    <circle cx="60" cy="84" r="6" fill="#ffffff"/>
+  </svg>
+
+  <div class="brush-stack">
+    <div class="brush-row brush-red"><span>${safeHookRed}</span></div>
+    <div class="brush-row brush-yellow"><span>${safeYellow}</span></div>
+    ${safeGreen ? `<div class="brush-row brush-green"><span>${safeGreen}</span></div>` : ''}
+    <div class="subline-wrap">
+      <div class="subline-red">${safeSubRed}</div>
+      <svg class="subline-swoosh" viewBox="0 0 600 24" fill="none">
+        <path d="M10 18 Q300 2 590 12" stroke="#dc2626" stroke-width="8" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+
+  ${circleUris.length > 0 ? `
+  <div class="circles-row">
+    ${circleUris.map((uri) => `<div class="circle-item"><img src="${uri}" /></div>`).join('')}
+  </div>` : ''}
+
+  <svg class="footer-waves" viewBox="0 0 1080 220" preserveAspectRatio="none">
+    <path d="M0,120 C260,30 560,190 1080,85 L1080,220 L0,220 Z" fill="#22c55e" opacity="0.85"/>
+    <path d="M0,155 C340,80 680,210 1080,125 L1080,220 L0,220 Z" fill="#15803d"/>
+    <path d="M0,185 C420,145 780,220 1080,165 L1080,220 L0,220 Z" fill="#064e3b"/>
+  </svg>
+
+  <svg class="footer-leaves" viewBox="0 0 200 200" fill="none">
+    <path d="M15,185 C20,105 85,45 165,35 C145,105 90,165 15,185 Z" fill="#22c55e"/>
+    <path d="M5,195 C45,125 110,95 180,110 C135,165 70,190 5,195 Z" fill="#16a34a"/>
+  </svg>
 </body>
 </html>`;
 
