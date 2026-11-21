@@ -26,7 +26,7 @@ class HealthGeminiClient
     {
         $this->baseUrl = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models'), '/');
         $this->model = (string) config('services.gemini.model', 'gemini-2.5-flash');
-        $this->timeoutSeconds = max(15, min(120, (int) config('services.gemini.timeout', 60)));
+        $this->timeoutSeconds = max(90, min(150, (int) config('services.gemini.timeout', 90)));
     }
 
     /**
@@ -84,7 +84,6 @@ class HealthGeminiClient
         $modelsToTry = array_values(array_unique([
             $this->model,
             'gemini-2.5-flash',
-            'gemini-3.8-flash',
             'gemini-3.5-flash-lite',
         ]));
         $startTime = microtime(true);
