@@ -292,15 +292,16 @@ Bạn phải đối chiếu nghiêm ngặt sản phẩm với 3 bộ quy chuẩn
 
 Hãy kiểm tra:
 1. Ảnh bìa đính kèm (ảnh đầu tiên nếu có): chữ tiếng Việt có bị sai chính tả, mất dấu hay dính mã kỹ thuật không.
-2. **KIỂM DUYỆT TỪNG PHÂN CẢNH (PASS / FAIL)** dựa trên các ảnh khung hình phân cảnh đính kèm theo thứ tự Cảnh 1 → Cảnh {$project->scenes->count()}:
-   - Cảnh có minh họa ĐÚNG hành động/bộ phận/ngữ cảnh lời thoại không? (VD: nói tiểu đêm mà phòng trống không rõ người dậy -> FAIL; nói tê bì chân mà cảnh ngồi thuyền du lịch -> FAIL; nói đo đường huyết mà đeo ống nghe -> FAIL).
-   - Không có 2 cảnh liên tiếp lặp cùng góc máy/hành động; không có người châu Âu/châu Phi.
-Chỉ trả về `failed_agents` khi thực sự có lỗi cần làm lại (nếu video đã tốt >= 80 điểm và mọi cảnh PASS, hãy để `failed_agents: []`).
+2. **KIỂM DUYỆT NGHIÊM NGẶT TỪNG PHÂN CẢNH (PASS / FAIL)** dựa trên các ảnh khung hình phân cảnh đính kèm theo thứ tự Cảnh 1 → Cảnh {$project->scenes->count()}:
+   - BẮT BUỘC mô tả trung thực những gì đang thấy trong ảnh vào `observed_in_image` TRƯỚC khi đánh giá `PASS` hay `FAIL`!
+   - Đánh `FAIL` ngay lập tức nếu ảnh có vật thể/hành động lạc đề (VD: chơi đàn nhị/nhạc cụ, viết sổ/nhật ký trên giường thay vì đi vệ sinh ban đêm, rót nước khi đang nói tê bì bàn chân, ngồi thuyền du lịch, đeo ống nghe thay cho đo đường huyết, hoặc có người châu Âu/châu Phi).
+   - Không có 2 cảnh liên tiếp lặp cùng góc máy/hành động.
+Chỉ trả về `failed_agents` khi thực sự có lỗi cần làm lại (nếu video đã tốt >= 80 điểm và TẤT CẢ các cảnh đều PASS, hãy để `failed_agents: []`).
 Trả về đúng JSON:
 {
   "overall_score": 88,
   "scene_audit": [
-    {"scene_order": 1, "status": "PASS", "reason": "Khớp lời thoại"}
+    {"scene_order": 1, "observed_in_image": "Mô tả ngắn gọn vật/người trong ảnh", "status": "PASS", "reason": "Khớp lời thoại"}
   ],
   "checklist": {
     "platform_policy": {"pass": true, "score": 95, "note": "..."},

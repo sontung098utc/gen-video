@@ -151,7 +151,7 @@ class Agent4AsianFootageHunterService
             }
         }
 
-        // 3. Dự phòng Pixabay Video API (ưu tiên châu Á)
+        // 3. Dự phòng Pixabay Video API (chỉ nhận nếu khớp nội dung)
         $pixabayKey = AppSetting::getValue('pixabay_api_key', (string) config('services.pixabay.api_key', ''));
         if ($providerUsed === null && $pixabayKey !== '') {
             $remoteUrl = $this->searchPixabay($pixabayKey, $searchQuery, $scene->scene_order);
@@ -161,22 +161,41 @@ class Agent4AsianFootageHunterService
             }
         }
 
-        if ($providerUsed === null || ! is_file($rawTempPath) || filesize($rawTempPath) < 1024) {
-            throw new RuntimeException(
-                'Agent AI 4 chưa tìm được video phù hợp cho Cảnh ' . $scene->scene_order
-                . '. Vui lòng cấu hình Pexels API Key / Pixabay API Key tại trang Cài đặt (/settings) hoặc tải video vào Kho Video Châu Á (/stock-library).'
-            );
-        }
-
         $disk = Storage::disk('public');
         $videoRelPath = "renders/{$filePrefix}_asian60fps.mp4";
         $videoFullPath = $disk->path($videoRelPath);
         $this->ensureParentDirectory($videoFullPath);
 
-        $this->normalizeClipWithFfmpeg($rawTempPath, $videoFullPath, $durationMs, $aspectRatio);
-
         $imageRelPath = "renders/{$filePrefix}_thumb.jpg";
         $imageFullPath = $disk->path($imageRelPath);
+
+        // 4. Nếu Stock không có clip đạt chuẩn Vision (tránh ghép cảnh sai như chơi đàn/viết sổ), tự động tạo cảnh Photographic AI đúng 100% hành động + chuyển động 60fps
+        if ($providerUsed === null || ! is_file($rawTempPath) || filesize($rawTempPath) < 1024) {
+            $aiGenerated = $this->generateAiSceneClipFallback(
+                scene: $scene,
+                durationMs: $durationMs,
+                aspectRatio: $aspectRatio,
+                videoOutputPath: $videoFullPath,
+                imageOutputPath: $imageFullPath
+            );
+            if ($aiGenerated) {
+                $this->log($project->id, $scene->id, 'gemini_ai_scene', $searchQuery, (int) round((microtime(true) - $startTime) * 1000));
+
+                return [
+                    'video_relative_path' => $videoRelPath,
+                    'image_relative_path' => is_file($imageFullPath) ? $imageRelPath : null,
+                    'provider' => 'gemini_ai_scene',
+                    'search_query' => $searchQuery,
+                ];
+            }
+
+            throw new RuntimeException(
+                'Agent AI 4 chưa tìm được video phù hợp cho Cảnh ' . $scene->scene_order
+                . '. Vui lòng cấu hình Pexels API Key / Gemini API Key tại trang Cài đặt (/settings) hoặc tải video vào Kho Video Châu Á (/stock-library).'
+            );
+        }
+
+        $this->normalizeClipWithFfmpeg($rawTempPath, $videoFullPath, $durationMs, $aspectRatio);
         $extracted = $this->extractThumbnailFrame($videoFullPath, $imageFullPath);
 
         @unlink($rawTempPath);
@@ -259,10 +278,10 @@ class Agent4AsianFootageHunterService
     private function searchPexels(string $apiKey, string $query, string $aspectRatio, int $sceneOrder, string $sceneNarration = ''): ?string
     {
         $orientation = $aspectRatio === '16:9' ? 'landscape' : 'portrait';
+        // Chỉ tìm theo truy vấn sát nội dung cảnh (KHÔNG dùng fallback chung chung kiểu 'healthy tea wellness')
         $queries = array_values(array_unique([
             $query,
-            'asian ' . implode(' ', array_slice(explode(' ', str_replace('asian', '', strtolower($query))), 0, 2)),
-            'asian healthy tea wellness',
+            trim(str_replace('asian', '', strtolower($query))),
         ]));
 
         foreach ($queries as $q) {
@@ -357,7 +376,7 @@ class Agent4AsianFootageHunterService
 
     private function searchPixabay(string $apiKey, string $query, int $sceneOrder): ?string
     {
-        $queries = array_values(array_unique([$query, 'asian health wellness', 'herbal tea nature']));
+        $queries = array_values(array_unique([$query]));
 
         foreach ($queries as $q) {
             try {
@@ -515,19 +534,82 @@ class Agent4AsianFootageHunterService
                 : "Visual target: \"{$query}\".";
 
             $res = $this->gemini->generateJson(
-                systemPrompt: 'You are a strict visual ethnicity AND script-relevance screener for a Vietnamese health channel. Return JSON {"accept": true/false, "reason": "..."}.',
-                userPrompt: "Inspect this video preview frame. {$contextNote}\nReject (\"accept\": false) if:\n1. ANY visible person looks European, Caucasian, Black/African, Middle Eastern, or non-East-Asian.\n2. The image is completely unrelated to the scene narration/visual target (e.g. random stretching or tea pouring when the script is about eye blur, blood sugar testing, or medical clinic).\nSet \"accept\": true ONLY if visible people are clearly Vietnamese / Chinese / East Asian (or no faces/people, just food/herbs/medical items) AND it reasonably fits the scene context.",
+                systemPrompt: 'You are a strict visual ethnicity AND script-relevance screener for a Vietnamese health channel. Return JSON {"observed": "short description of what is literally in the frame", "relevance_score": 1-10, "accept": true/false}.',
+                userPrompt: "Inspect this video preview frame. {$contextNote}\nFirst describe what is literally in the frame in `observed`.\nSet `accept`: false (and low `relevance_score`) if:\n1. ANY visible person looks European, Caucasian, Black/African, Middle Eastern, or non-East-Asian.\n2. The scene shows an unrelated activity/prop (e.g. playing musical instrument/erhu, writing in a diary/notebook, sitting on a boat, random dancing, stethoscope when script is about blood sugar meter, or pouring water when script is about foot numbness).\nSet `accept`: true ONLY if `relevance_score` >= 7 AND visible people are Vietnamese / Chinese / East Asian (or no faces/people, just matching medical/food/body-part close-up) AND it clearly depicts the narration.",
                 actionType: 'agent4_vision_ethnicity_check',
                 imagePaths: [$tmpImg],
                 temperature: 0.1
             );
 
-            return (bool) ($res['accept'] ?? true);
+            $score = (int) ($res['relevance_score'] ?? 0);
+
+            return ((bool) ($res['accept'] ?? false)) && $score >= 7;
         } catch (Throwable) {
-            return true;
+            return false;
         } finally {
             @unlink($tmpImg);
         }
+    }
+
+    /**
+     * Tạo cảnh Photographic AI đúng 100% hành động lời thoại + chuyển động 60fps khi Stock không có clip đạt chuẩn.
+     */
+    private function generateAiSceneClipFallback(
+        StoryboardScene $scene,
+        int $durationMs,
+        string $aspectRatio,
+        string $videoOutputPath,
+        string $imageOutputPath
+    ): bool {
+        $apiKey = AppSetting::getValue('gemini_api_key', (string) config('services.gemini.api_key', ''));
+        if ($apiKey === '') {
+            return false;
+        }
+
+        $prompt = "Photorealistic DSLR health lifestyle photography, vertical 9:16 composition, warm natural daylight, authentic Vietnamese / East Asian setting, depicting: {$scene->visual_prompt} (context: {$scene->narration_text}). Natural human anatomy, crisp focus, strictly NO text, NO watermark.";
+        $baseUrl = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models'), '/');
+
+        foreach (['gemini-2.5-flash-image', 'gemini-2.0-flash-exp-image-generation'] as $model) {
+            try {
+                $response = Http::timeout(60)
+                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                    ->acceptJson()
+                    ->post("{$baseUrl}/{$model}:generateContent?key={$apiKey}", [
+                        'contents' => [[
+                            'role' => 'user',
+                            'parts' => [['text' => $prompt]],
+                        ]],
+                        'generationConfig' => [
+                            'responseModalities' => ['IMAGE'],
+                        ],
+                    ]);
+
+                if (! $response->successful()) {
+                    continue;
+                }
+
+                $parts = data_get($response->json(), 'candidates.0.content.parts', []);
+                foreach ((array) $parts as $part) {
+                    $b64 = (string) (data_get($part, 'inlineData.data') ?: data_get($part, 'inline_data.data') ?: '');
+                    if ($b64 !== '') {
+                        file_put_contents($imageOutputPath, base64_decode($b64));
+                        if (is_file($imageOutputPath) && filesize($imageOutputPath) > 2048) {
+                            return app(\App\Services\Media\FfmpegVideoCompositorService::class)->generateKenBurnsClip(
+                                imagePath: $imageOutputPath,
+                                durationMs: $durationMs,
+                                outputVideoPath: $videoOutputPath,
+                                cameraMotion: $scene->camera_motion ?: 'zoom_in',
+                                aspectRatio: $aspectRatio
+                            );
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                Log::warning("[Agent4AiFallback] {$model} error: " . $e->getMessage());
+            }
+        }
+
+        return false;
     }
 
     private function log(int $projectId, int $sceneId, string $provider, string $query, int $latencyMs): void
