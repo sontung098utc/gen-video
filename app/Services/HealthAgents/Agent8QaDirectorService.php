@@ -296,6 +296,8 @@ Hãy kiểm tra:
    - BẮT BUỘC mô tả trung thực những gì đang thấy trong ảnh vào `observed_in_image` TRƯỚC khi đánh giá `PASS` hay `FAIL`!
    - Đánh `FAIL` ngay lập tức nếu ảnh có vật thể/hành động lạc đề (VD: chơi đàn nhị/nhạc cụ, viết sổ/nhật ký trên giường thay vì đi vệ sinh ban đêm, rót nước khi đang nói tê bì bàn chân, ngồi thuyền du lịch, đeo ống nghe thay cho đo đường huyết, hoặc có người châu Âu/châu Phi).
    - Không có 2 cảnh liên tiếp lặp cùng góc máy/hành động.
+3. **KIỂM DUYỆT ĐỘ SÂU GIÁ TRỊ KỊCH BẢN (`viral_structure`)**:
+   - Đánh giá thấp (< 70đ, yêu cầu `agent3` làm lại) nếu kịch bản chỉ liệt kê sơ sài 1 câu ngắn/cảnh mà KHÔNG giải thích **tại sao (cơ chế y khoa)**, thiếu **con số/ngưỡng nhận biết cụ thể**, hoặc gộp 2 mục vào 1 cảnh ngắn.
 Chỉ trả về `failed_agents` khi thực sự có lỗi cần làm lại (nếu video đã tốt >= 80 điểm và TẤT CẢ các cảnh đều PASS, hãy để `failed_agents: []`).
 Trả về đúng JSON:
 {

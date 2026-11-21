@@ -52,17 +52,21 @@ Bạn là Agent AI 3 — Biên kịch Video Ngắn Sức Khỏe giữ chân ngư
 QUY CHUẨN CHÍNH SÁCH NỀN TẢNG:
 {$policyRules}
 
-QUY CHUẨN KỊCH BẢN TRỌNG TÂM — KHÔNG LAN MAN (BẮT BUỘC):
-1. **Cảnh 1 (HOOK 0–3 giây đầu — CỰC QUAN TRỌNG)**: Đánh thẳng vào nỗi lo hoặc sự tò mò ngay câu đầu tiên (VD: *"Nhiều người lớn tuổi đang có 5 dấu hiệu tiền tiểu đường này nhưng lại tưởng do tuổi già!"*). TUYỆT ĐỐI KHÔNG chào hỏi dài dòng, không nói chung chung.
-2. **ĐÚNG TRỌNG TÂM DẠNG DANH SÁCH (NẾU CÓ)**: Nếu tiêu đề có con số liệt kê (VD: *"5 dấu hiệu..."*, *"7 lợi ích..."*, *"3 sai lầm..."*), BẮT BUỘC các cảnh 2, 3, 4, 5 phải **liệt kê ĐẦY ĐỦ, RÕ RÀNG TỪNG MỤC (Thứ nhất là..., Thứ hai là..., Thứ ba là..., Thứ tư là..., Thứ năm là...)** sát với tiêu đề! KHÔNG được bỏ dở danh sách để nói lan man sang giải pháp chung chung.
-3. **Cảnh cuối (Cảnh 6 — THÔNG ĐIỆP XÉT NGHIỆM + CTA + TỪ CHỐI TRÁCH NHIỆM BẮT BUỘC)**:
-   - Nếu video nói về dấu hiệu/triệu chứng, BẮT BUỘC nhấn mạnh: *"Những biểu hiện này không đủ để kết luận bệnh — đừng chờ có triệu chứng mới đi kiểm tra hay xét nghiệm định kỳ."*
-   - Kết thúc bằng lời mời theo dõi kênh {$channelName} và câu từ chối trách nhiệm: *"Nội dung chỉ mang tính tham khảo, không thay thế chẩn đoán của bác sĩ."*
-4. **Thẻ SFX**: Chỉ dùng tối đa 1–2 thẻ `@{pop}` hoặc `@{ding}` ở điểm nhấn quan trọng nhất trong cả video (KHÔNG dùng `@{whoosh}`).
-5. **visual_prompt (TIẾNG ANH 4–6 TỪ — CỤ THỂ HÀNH ĐỘNG & KHÔNG LẶP GÓC MÁY)**:
-   - PHẢI mô tả HÀNH ĐỘNG CỤ THỂ khớp 100% lời thoại từng cảnh (không chung chung, không dùng cảnh du lịch/ngồi thuyền, không dùng ống nghe thay cho đo đường huyết).
-   - Các cảnh liên tiếp PHẢI khác nhau về hành động và góc quay (cận cảnh bàn chân/bàn tay, uống nước, thức dậy ban đêm, máy đo đường huyết...).
-   - VD chuẩn: khát nước -> `"asian woman drinking glass water"`, tiểu đêm -> `"person waking up night lamp"`, tê bì chân -> `"close up hands massaging foot"`, mệt mỏi -> `"elderly asian tired sitting chair"`, đo đường huyết -> `"blood glucose meter finger test"`.
+QUY CHUẨN KỊCH BẢN CHUYÊN SÂU — MANG LẠI GIÁ TRỊ THẬT CHO NGƯỜI XEM (BẮT BUỘC):
+1. **Độ dài & Số phân cảnh (7 đến 9 phân cảnh — tổng thời lượng ~50–70 giây)**:
+   - KHÔNG BAO GIỜ gộp 2 ý/2 dấu hiệu vào cùng 1 cảnh ngắn cụt lủn! Nếu tiêu đề có 5 dấu hiệu (hoặc 5 sai lầm/lợi ích), hãy dành **5 phân cảnh riêng biệt** cho từng mục (Cảnh 2 → Cảnh 6), cộng thêm Cảnh 1 (Hook), Cảnh 7 (Giá trị thực hành / Chỉ số cần biết), Cảnh 8 (Kết + Xét nghiệm + Từ chối trách nhiệm).
+2. **Mỗi phân cảnh nội dung PHẢI ĐẠT ĐỦ 3 TẦNG GIÁ TRỊ (28–40 từ/cảnh)**:
+   - **Tầng 1 (Cái gì):** Nêu rõ dấu hiệu/nguyên tắc + **ngưỡng con số cụ thể** (VD: *"đi tiểu đêm từ 2 lần trở lên"*, *"vết trầy xước nhỏ hơn 1cm nhưng hơn 2 tuần chưa lành"*).
+   - **Tầng 2 (TẠI SAO — Cơ chế y khoa dễ hiểu):** Giải thích ngắn gọn cơ chế Tây y hoặc Đông y để người xem hiểu bản chất và thấy kiến thức thực sự giá trị (VD: *"Vì đường huyết cao kéo nước từ mô tế bào vào máu khiến thận phải tăng tốc đào thải"*, hoặc *"Tế bào không hấp thụ được đường để tạo năng lượng nên dù ăn đủ vẫn rã rời"*).
+   - **Tầng 3 (Phân biệt thực tế):** Chỉ ra cách phân biệt với thói quen/tuổi già thông thường.
+3. **Cảnh 1 (HOOK 3–4 giây đầu)**: Nêu nghịch lý hoặc con số/sự thật khiến người xem phải dừng lại nghe tiếp.
+4. **Cảnh áp chót (Giá trị thực hành / Chỉ số y khoa chuẩn)**: Cung cấp kiến thức cụ thể để người xem áp dụng ngay (VD: *"Đừng đoán qua cảm giác — hãy kiểm tra đường huyết lúc đói (ngưỡng tiền tiểu đường 5,6 đến 6,9 mmol/L) hoặc chỉ số HbA1c"*).
+5. **Cảnh cuối (CTA + TỪ CHỐI TRÁCH NHIỆM BẮT BUỘC)**:
+   - Nhấn mạnh: *"Những biểu hiện này không đủ để kết luận bệnh — đừng chờ có triệu chứng mới đi kiểm tra định kỳ."*
+   - Mời theo dõi kênh {$channelName} và kết thúc bằng: *"Nội dung chỉ mang tính tham khảo, không thay thế chẩn đoán của bác sĩ."*
+6. **Thẻ SFX**: Chỉ dùng tối đa 1–2 thẻ `@{pop}` hoặc `@{ding}` ở điểm nhấn quan trọng nhất trong cả video (KHÔNG dùng `@{whoosh}`).
+7. **visual_prompt (TIẾNG ANH 4–6 TỪ — CỤ THỂ HÀNH ĐỘNG & KHÔNG LẶP GÓC MÁY)**:
+   - PHẢI mô tả HÀNH ĐỘNG CỤ THỂ khớp 100% lời thoại từng cảnh với **người Việt Nam / Trung Quốc** hoặc **cận cảnh y tế/thực phẩm**; các cảnh liên tiếp PHẢI khác nhau về hành động và góc quay.
 
 Cấu trúc JSON:
 {
@@ -83,7 +87,7 @@ Cấu trúc JSON:
 PROMPT;
 
         $userPrompt = <<<USER
-Hãy viết kịch bản 6 phân cảnh CỰC KỲ SÚC TÍCH, ĐÚNG TRỌNG TÂM, KHÔNG LAN MAN cho video:
+Hãy viết kịch bản 7–9 phân cảnh CHUYÊN SÂU, CÓ CƠ CHẾ Y KHOA (TẠI SAO), CON SỐ CỤ THỂ VÀ GIÁ TRỊ THỰC TIỄN CAO cho video:
 - Tiêu đề video: {$title}
 - Góc tiếp cận: {$angle}
 - Nội dung trọng tâm: {$brief}
@@ -91,7 +95,7 @@ Hãy viết kịch bản 6 phân cảnh CỰC KỲ SÚC TÍCH, ĐÚNG TRỌNG T�
 Tài liệu chính thống từ Kho Kiến Thức:
 {$kbContext}
 {$feedbackSection}
-Hãy trả về JSON chuẩn với đúng 6 phân cảnh.
+Hãy trả về JSON chuẩn (mỗi cảnh nội dung 28–40 từ, không gộp 2 ý vào 1 cảnh ngắn).
 USER;
 
         $scenesData = [];
