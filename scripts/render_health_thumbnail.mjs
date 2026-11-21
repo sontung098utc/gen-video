@@ -87,6 +87,9 @@ function main() {
             .replace(/"/g, '&quot;');
 
     const parts = splitHeadlineForImpact(headline);
+    const wordCount = String(headline || '').trim().split(/\s+/).filter(Boolean).length;
+    const yellowSize = wordCount > 7 ? 84 : (wordCount > 5 ? 98 : 114);
+    const whiteSize = wordCount > 7 ? 72 : (wordCount > 5 ? 84 : 94);
     const safeTop = escapeHtml(parts.top);
     const safeBottom = escapeHtml(parts.bottom);
     const safeChannel = escapeHtml(channelName.toUpperCase());
@@ -96,13 +99,16 @@ function main() {
 <html lang="vi">
 <head>
 <meta charset="UTF-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
     width: 1080px;
     height: 1920px;
     overflow: hidden;
-    font-family: 'Segoe UI', 'Impact', 'Arial Black', sans-serif;
+    font-family: 'Montserrat', 'Segoe UI', 'Arial', sans-serif;
     position: relative;
     background: linear-gradient(180deg, #dcfce7 0%, #86efac 32%, #166534 100%);
   }
@@ -185,25 +191,27 @@ function main() {
   }
   .headline-yellow {
     color: #fde047;
-    font-size: 112px;
+    font-size: ${yellowSize}px;
     font-weight: 900;
-    line-height: 1.08;
-    -webkit-text-stroke: 5px #052e16;
+    line-height: 1.12;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 16px #062c16;
     text-shadow:
-      0 8px 0 #052e16,
-      0 14px 28px rgba(0, 0, 0, 0.65);
-    letter-spacing: -1px;
+      0 8px 0 #062c16,
+      0 14px 28px rgba(0, 0, 0, 0.55);
+    letter-spacing: -0.5px;
   }
   .headline-white {
     color: #ffffff;
-    font-size: 92px;
+    font-size: ${whiteSize}px;
     font-weight: 900;
-    line-height: 1.12;
-    -webkit-text-stroke: 4px #052e16;
+    line-height: 1.16;
+    paint-order: stroke fill;
+    -webkit-text-stroke: 14px #062c16;
     text-shadow:
-      0 7px 0 #052e16,
-      0 12px 24px rgba(0, 0, 0, 0.62);
-    letter-spacing: -0.5px;
+      0 7px 0 #062c16,
+      0 12px 24px rgba(0, 0, 0, 0.52);
+    letter-spacing: -0.3px;
   }
   .red-ribbon {
     display: inline-flex;

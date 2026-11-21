@@ -106,6 +106,69 @@ USER;
     }
 
     /**
+     * Sinh bộ tiêu đề SEO giật tít cho một VideoProject tạo nhanh (không xuất phát từ HealthPlanItem).
+     */
+    public function generateForProject(\App\Models\VideoProject $project): \App\Models\VideoProject
+    {
+        $channelName = AppSetting::getValue('channel_name', 'Sống Khỏe Mỗi Ngày');
+
+        $systemPrompt = <<<PROMPT
+Bạn là Agent AI 2 — Chuyên gia đặt Tiêu đề Video Ngắn Sức Khỏe có tỷ lệ nhấp (CTR) cực cao cho kênh "{$channelName}" trên TikTok, Facebook Reels và YouTube Shorts.
+
+NHIỆM VỤ:
+Từ chủ đề thô người dùng nhập, KHÔNG ĐƯỢC copy y nguyên câu thô — hãy biến tấu thành tiêu đề chuẩn SEO giật tít tự nhiên, đánh trúng tâm lý tò mò/lo lắng của người xem Việt Nam (vẫn tuân thủ chính sách y tế, không nói "chữa khỏi 100%", "thần dược").
+- `seo_title_tiktok`: Hấp dẫn, gây tò mò mạnh, có từ khóa nổi bật (<= 85 ký tự).
+- `seo_title_reels`: Gần gũi, kích thích chia sẻ cho gia đình trên Fanpage Reels (<= 95 ký tự).
+- `seo_title_shorts`: Chuẩn từ khóa tìm kiếm YouTube Shorts (<= 85 ký tự).
+- `cover_headline`: Cực ngắn 4–7 từ IN HOA để in chữ to lên ảnh bìa (VD: "5 DẤU HIỆU TIỀN TIỂU ĐƯỜNG").
+- `cover_badge_red`: 3–5 từ ngắn gọn cho ruy-băng đỏ (VD: "NGƯỜI LỚN TUỔI CẦN BIẾT", "ĐỪNG CHỦ QUAN").
+- Trả về đúng JSON:
+{
+  "seo_title_tiktok": "...",
+  "seo_title_reels": "...",
+  "seo_title_shorts": "...",
+  "cover_headline": "...",
+  "cover_badge_red": "...",
+  "seo_description": "...",
+  "hashtags": ["#songkhoemoingay", "#suckhoe", "#tieuduong", "#meosuckhoe"]
+}
+PROMPT;
+
+        $userPrompt = "Chủ đề người dùng nhập: {$project->title}\nGhi chú thêm: {$project->topic_or_brief}";
+
+        try {
+            $res = $this->gemini->generateJson(
+                systemPrompt: $systemPrompt,
+                userPrompt: $userPrompt,
+                actionType: 'agent2_seo_title_project',
+                videoProjectId: $project->id,
+                temperature: 0.7
+            );
+
+            $seoMeta = is_array($project->seo_meta_json) ? $project->seo_meta_json : [];
+            $seoMeta['seo_title_tiktok'] = Str::limit(trim((string) ($res['seo_title_tiktok'] ?? $project->title)), 240, '');
+            $seoMeta['seo_title_reels'] = Str::limit(trim((string) ($res['seo_title_reels'] ?? $project->title)), 240, '');
+            $seoMeta['seo_title_shorts'] = Str::limit(trim((string) ($res['seo_title_shorts'] ?? $project->title)), 240, '');
+            $seoMeta['cover_headline'] = Str::limit(trim((string) ($res['cover_headline'] ?? Str::words($project->title, 6, ''))), 120, '');
+            $seoMeta['cover_badge_red'] = Str::limit(trim((string) ($res['cover_badge_red'] ?? 'ĐỪNG CHỦ QUAN')), 80, '');
+            $seoMeta['seo_description'] = trim((string) ($res['seo_description'] ?? $project->topic_or_brief));
+            $seoMeta['hashtags'] = is_array($res['hashtags'] ?? null)
+                ? array_values(array_slice(array_map('strval', $res['hashtags']), 0, 8))
+                : ['#songkhoemoingay', '#suckhoe', '#meosuckhoe'];
+            $seoMeta['agent2_optimized'] = true;
+
+            $project->update([
+                'title' => $seoMeta['seo_title_tiktok'],
+                'seo_meta_json' => $seoMeta,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('[Agent2SeoTitle] Fallback SEO project #' . $project->id . ': ' . $e->getMessage());
+        }
+
+        return $project->refresh();
+    }
+
+    /**
      * Chạy Agent 2 hàng loạt cho các mục chưa có tiêu đề trong một Kế hoạch (giới hạn theo batch tránh quá tải).
      */
     public function generateBatchForPlan(HealthContentPlan $plan, int $limit = 10): int

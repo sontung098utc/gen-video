@@ -53,23 +53,22 @@ QUY CHUẨN CHÍNH SÁCH NỀN TẢNG:
 {$policyRules}
 
 QUY CHUẨN KỊCH BẢN TRỌNG TÂM — KHÔNG LAN MAN (BẮT BUỘC):
-1. **Cảnh 1 (HOOK 0–3 giây đầu — CỰC QUAN TRỌNG)**: Phải đánh thẳng vào 1 sai lầm phổ biến hoặc 1 sự thật khiến người xem giật mình dừng lại nghe (VD: *"Rất nhiều người cứ nghĩ uống nước lạnh buổi sáng là tốt, nhưng đây mới là sự thật..."* hoặc *"Nếu bạn có 3 dấu hiệu này vào mùa Đông, thận đang kêu cứu đấy!"*). TUYỆT ĐỐI KHÔNG chào hỏi dài dòng, không nói chung chung kiểu "hãy bảo vệ sức khỏe".
-2. **Cảnh 2, 3, 4 (ĐI THẲNG VÀO GIÁ TRỊ CỤ THỂ)**: Nêu rõ TÊN CỤ THỂ từng thực phẩm / huyệt đạo / thói quen / con số (VD: *1 cốc nước ấm 40 độ*, *3 lát gừng tươi*, *ngâm chân 15 phút trước 21h*, *tránh 3 món nhiều muối*). Mỗi cảnh 1 ý đắt giá, rõ ràng, súc tích 18–25 từ.
-3. **Cảnh 5 (LƯU Ý AN TOÀN THỰC TẾ)**: Ai không nên áp dụng hoặc liều lượng tối đa mỗi ngày.
-4. **Cảnh 6 (CTA 3 giây cuối)**: Ngắn gọn, mời lưu lại cho người thân và theo dõi kênh {$channelName}.
-5. **Thẻ SFX**: Chỉ dùng tối đa 1–2 thẻ `@{pop}` hoặc `@{ding}` ở điểm nhấn quan trọng nhất trong cả video (KHÔNG nhồi `@{whoosh}`).
-6. **visual_prompt (TIẾNG ANH 3–5 TỪ)**: PHẢI mô tả cụ thể cảnh **người Việt Nam / người Trung Quốc** HOẶC **cận cảnh thực phẩm / thảo dược / trà / y tế KHÔNG CÓ NGƯỜI CHÂU ÂU/CHÂU PHI** (VD: `"vietnamese woman drinking warm tea"`, `"chinese herbal medicine teapot"`, `"fresh ginger honey warm water"`, `"asian doctor medical clinic"`, `"healthy green vegetables bowl"`).
+1. **Cảnh 1 (HOOK 0–3 giây đầu — CỰC QUAN TRỌNG)**: Đánh thẳng vào nỗi lo hoặc sự tò mò ngay câu đầu tiên (VD: *"Nhiều người lớn tuổi đang có 5 dấu hiệu tiền tiểu đường này nhưng lại tưởng do tuổi già!"*). TUYỆT ĐỐI KHÔNG chào hỏi dài dòng, không nói chung chung.
+2. **ĐÚNG TRỌNG TÂM DẠNG DANH SÁCH (NẾU CÓ)**: Nếu tiêu đề có con số liệt kê (VD: *"5 dấu hiệu..."*, *"7 lợi ích..."*, *"3 sai lầm..."*), BẮT BUỘC các cảnh 2, 3, 4, 5 phải **liệt kê ĐẦY ĐỦ, RÕ RÀNG TỪNG MỤC (Thứ nhất là..., Thứ hai là..., Thứ ba là..., Thứ tư là..., Thứ năm là...)** sát với tiêu đề! KHÔNG được bỏ dở danh sách để nói lan man sang giải pháp chung chung.
+3. **Cảnh cuối (Cảnh 6 — CTA + TỪ CHỐI TRÁCH NHIỆM Y KHOA BẮT BUỘC)**: Mời theo dõi kênh {$channelName} VÀ **BẮT BUỘC kết thúc bằng câu từ chối trách nhiệm**: *"Lưu ý: Nội dung chỉ mang tính chất tham khảo, không thay thế chẩn đoán hay chỉ định của bác sĩ."*
+4. **Thẻ SFX**: Chỉ dùng tối đa 1–2 thẻ `@{pop}` hoặc `@{ding}` ở điểm nhấn quan trọng nhất trong cả video (KHÔNG dùng `@{whoosh}`).
+5. **visual_prompt (TIẾNG ANH 3–5 TỪ)**: PHẢI mô tả cực sát hành động/triệu chứng/thực phẩm của từng cảnh với **người Việt Nam / Trung Quốc** hoặc **cận cảnh y tế/thực phẩm** (VD: người lớn tuổi châu Á mệt mỏi -> `"elderly asian man feeling tired"`, khát nước -> `"elderly asian drinking water"`, tiểu đêm/kiểm tra đường huyết -> `"blood sugar meter glucometer test"`, mờ mắt -> `"elderly asian rubbing eyes"`, tê bì chân tay -> `"elderly person massaging leg"`).
 
 Cấu trúc JSON:
 {
   "cover_headline": "TIÊU ĐỀ NGẮN 4-6 TỪ IN HOA GIẬT TÍT",
   "cover_badge_red": "NHÃN ĐỎ 3-5 TỪ (VD: ĐỪNG CHỦ QUAN)",
-  "thumbnail_visual_prompt": "Bright sunny close-up studio food/herb photography of [đối tượng chính của bài], vibrant natural colors, crisp detail, no text",
+  "thumbnail_visual_prompt": "Bright sunny close-up studio food/herb/medical photography of [đối tượng chính của bài], vibrant natural colors, crisp detail, no text",
   "scenes": [
     {
       "scene_order": 1,
       "narration_text": "Câu thoại Hook cực mạnh, đi thẳng vấn đề...",
-      "visual_prompt": "vietnamese woman morning warm tea",
+      "visual_prompt": "elderly asian person health check",
       "transition_type": "fade",
       "sfx_prompt": "none",
       "camera_motion": "zoom_in"
@@ -217,10 +216,10 @@ USER;
                 'camera_motion' => 'pan_left',
             ],
             [
-                'narration_text' => "Hãy lưu lại video này cho người thân và theo dõi kênh {$channelName} để nhận thêm nhiều kiến thức hữu ích nhé!",
+                'narration_text' => "Hãy lưu lại và theo dõi kênh {$channelName}. Lưu ý: Nội dung chỉ mang tính chất tham khảo, không thay thế chẩn đoán hay chỉ định của bác sĩ.",
                 'visual_prompt' => 'happy asian family smiling outdoor nature',
                 'transition_type' => 'fade',
-                'sfx_prompt' => 'ding',
+                'sfx_prompt' => 'none',
                 'camera_motion' => 'zoom_in',
             ],
         ];

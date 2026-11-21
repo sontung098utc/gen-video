@@ -163,6 +163,9 @@ class RunHealth8AgentPipelineJob implements ShouldQueue
         if (in_array('agent2', $targets, true) && $planItem !== null) {
             $planItem = $agent2->generateForItem($planItem, $feedback);
             $project->update(['title' => $planItem->seo_title_tiktok ?: $project->title]);
+        } elseif ($planItem === null && empty(($project->seo_meta_json ?? [])['agent2_optimized'])) {
+            // Tự động chạy Agent 2 tối ưu tiêu đề SEO giật tít cho dự án tạo nhanh
+            $project = $agent2->generateForProject($project);
         }
 
         if (in_array('agent3', $targets, true) || $project->scenes()->count() === 0) {

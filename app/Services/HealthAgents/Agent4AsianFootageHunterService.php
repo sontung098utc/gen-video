@@ -108,10 +108,10 @@ class Agent4AsianFootageHunterService
             }
         }
 
-        // 2. Tìm trên Pexels Video API (ưu tiên châu Á)
+        // 2. Tìm trên Pexels Video API (ưu tiên châu Á & sát nội dung cảnh)
         $pexelsKey = AppSetting::getValue('pexels_api_key', (string) config('services.pexels.api_key', ''));
         if ($providerUsed === null && $pexelsKey !== '') {
-            $remoteUrl = $this->searchPexels($pexelsKey, $searchQuery, $aspectRatio, $scene->scene_order);
+            $remoteUrl = $this->searchPexels($pexelsKey, $searchQuery, $aspectRatio, $scene->scene_order, (string) $scene->narration_text);
             if ($remoteUrl !== null && $this->downloadVideo($remoteUrl, $rawTempPath)) {
                 $this->usedRemoteUrls[] = $remoteUrl;
                 $providerUsed = 'pexels_asian';
@@ -223,7 +223,7 @@ class Agent4AsianFootageHunterService
         return $bestScore > 0 ? $best : null;
     }
 
-    private function searchPexels(string $apiKey, string $query, string $aspectRatio, int $sceneOrder): ?string
+    private function searchPexels(string $apiKey, string $query, string $aspectRatio, int $sceneOrder, string $sceneNarration = ''): ?string
     {
         $orientation = $aspectRatio === '16:9' ? 'landscape' : 'portrait';
         $queries = array_values(array_unique([
@@ -269,8 +269,8 @@ class Agent4AsianFootageHunterService
                     }
 
                     $previewImageUrl = (string) ($vid['image'] ?? '');
-                    if ($previewImageUrl !== '' && ! $this->isAsianOrNeutralSubjectPreview($previewImageUrl)) {
-                        Log::info('[Agent4AsianFootage] Loại bỏ video có người ngoài châu Á (Pexels): ' . ($vid['url'] ?? $bestUrl));
+                    if ($previewImageUrl !== '' && ! $this->isAsianOrNeutralSubjectPreview($previewImageUrl, $q, $sceneNarration)) {
+                        Log::info('[Agent4AsianFootage] Loại bỏ video không phù hợp (ngoài châu Á hoặc lệch kịch bản): ' . ($vid['url'] ?? $bestUrl));
                         continue;
                     }
 
@@ -453,7 +453,7 @@ class Agent4AsianFootageHunterService
      * CHỈ chấp nhận nếu người trong ảnh là người Việt Nam / Trung Quốc / Đông Á, HOẶC không có mặt người (chỉ có đồ ăn, thảo dược, trà, y tế).
      * Loại bỏ 100% người châu Âu, châu Phi, Nam Á, Mỹ Latin...
      */
-    private function isAsianOrNeutralSubjectPreview(string $previewImageUrl): bool
+    private function isAsianOrNeutralSubjectPreview(string $previewImageUrl, string $query = '', string $sceneNarration = ''): bool
     {
         $tmpImg = storage_path('app/temp/a4_preview_' . uniqid() . '.jpg');
         $this->ensureParentDirectory($tmpImg);
@@ -468,9 +468,13 @@ class Agent4AsianFootageHunterService
                 return true;
             }
 
+            $contextNote = $sceneNarration !== ''
+                ? "Scene narration (Vietnamese): \"{$sceneNarration}\" | Visual target: \"{$query}\"."
+                : "Visual target: \"{$query}\".";
+
             $res = $this->gemini->generateJson(
-                systemPrompt: 'You are a strict visual ethnicity & content screener for a Vietnamese health channel. Return JSON {"accept": true/false, "reason": "..."}.',
-                userPrompt: 'Inspect this video preview frame. Set "accept": false if ANY visible person looks European, Caucasian, Black/African, Middle Eastern, or non-East-Asian. Set "accept": true ONLY if visible people are clearly Vietnamese / Chinese / East Asian, OR if there are no people/faces at all (pure food, herbs, tea, nature, medical graphics, hands only).',
+                systemPrompt: 'You are a strict visual ethnicity AND script-relevance screener for a Vietnamese health channel. Return JSON {"accept": true/false, "reason": "..."}.',
+                userPrompt: "Inspect this video preview frame. {$contextNote}\nReject (\"accept\": false) if:\n1. ANY visible person looks European, Caucasian, Black/African, Middle Eastern, or non-East-Asian.\n2. The image is completely unrelated to the scene narration/visual target (e.g. random stretching or tea pouring when the script is about eye blur, blood sugar testing, or medical clinic).\nSet \"accept\": true ONLY if visible people are clearly Vietnamese / Chinese / East Asian (or no faces/people, just food/herbs/medical items) AND it reasonably fits the scene context.",
                 actionType: 'agent4_vision_ethnicity_check',
                 imagePaths: [$tmpImg],
                 temperature: 0.1
