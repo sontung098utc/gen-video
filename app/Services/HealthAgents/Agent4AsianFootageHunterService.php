@@ -278,10 +278,10 @@ class Agent4AsianFootageHunterService
     private function searchPexels(string $apiKey, string $query, string $aspectRatio, int $sceneOrder, string $sceneNarration = ''): ?string
     {
         $orientation = $aspectRatio === '16:9' ? 'landscape' : 'portrait';
-        // Chỉ tìm theo truy vấn sát nội dung cảnh (KHÔNG dùng fallback chung chung kiểu 'healthy tea wellness')
         $queries = array_values(array_unique([
             $query,
             trim(str_replace('asian', '', strtolower($query))),
+            'asian elderly health tired',
         ]));
 
         foreach ($queries as $q) {
@@ -357,7 +357,7 @@ class Agent4AsianFootageHunterService
                     }
                 }
 
-                if ($bestFallbackUrl !== null && $bestFallbackScore >= 5) {
+                if ($bestFallbackUrl !== null && $bestFallbackScore >= 3) {
                     if ($bestFallbackId !== null) {
                         $this->usedVideoIds[] = $bestFallbackId;
                     }
@@ -576,7 +576,7 @@ class Agent4AsianFootageHunterService
             );
 
             $score = (int) ($res['relevance_score'] ?? 0);
-            $accept = ((bool) ($res['accept'] ?? false)) && $score >= 5;
+            $accept = ((bool) ($res['accept'] ?? false)) && $score >= 3;
 
             return ['accept' => $accept, 'score' => $score];
         } catch (Throwable) {
