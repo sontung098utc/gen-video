@@ -153,15 +153,39 @@ function main() {
     background: radial-gradient(circle, rgba(187, 247, 208, 0.55) 0%, rgba(187, 247, 208, 0) 70%);
     pointer-events: none;
   }
+  /* Khung lá xanh tươi sáng góc trên giống ảnh bìa mẫu Sống Khỏe Mỗi Ngày */
+  .leaf-corner-left {
+    position: absolute;
+    top: -30px;
+    left: -30px;
+    width: 340px;
+    height: 340px;
+    z-index: 6;
+    opacity: 0.92;
+    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
+    pointer-events: none;
+  }
+  .leaf-corner-right {
+    position: absolute;
+    top: -30px;
+    right: -30px;
+    width: 340px;
+    height: 340px;
+    z-index: 6;
+    opacity: 0.92;
+    transform: scaleX(-1);
+    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25));
+    pointer-events: none;
+  }
   .header-stack {
     position: relative;
     z-index: 10;
-    padding: 68px 48px 0 48px;
+    padding: 64px 52px 0 52px;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 24px;
+    gap: 20px;
   }
   .brand-pill {
     display: inline-flex;
@@ -235,6 +259,17 @@ function main() {
   <div class="sunny-top-glow"></div>
   <div class="sunflare"></div>
   <div class="sunflare-right"></div>
+
+  <svg class="leaf-corner-left" viewBox="0 0 200 200" fill="none">
+    <path d="M10,10 C90,15 150,70 165,155 C95,140 35,90 10,10 Z" fill="#22c55e" opacity="0.88"/>
+    <path d="M0,45 C75,40 120,95 110,175 C50,150 15,105 0,45 Z" fill="#16a34a" opacity="0.9"/>
+    <path d="M40,0 C110,10 165,45 185,110 C120,95 70,55 40,0 Z" fill="#4ade80" opacity="0.78"/>
+  </svg>
+  <svg class="leaf-corner-right" viewBox="0 0 200 200" fill="none">
+    <path d="M10,10 C90,15 150,70 165,155 C95,140 35,90 10,10 Z" fill="#22c55e" opacity="0.88"/>
+    <path d="M0,45 C75,40 120,95 110,175 C50,150 15,105 0,45 Z" fill="#16a34a" opacity="0.9"/>
+    <path d="M40,0 C110,10 165,45 185,110 C120,95 70,55 40,0 Z" fill="#4ade80" opacity="0.78"/>
+  </svg>
 
   <div class="header-stack">
     <div class="brand-pill">

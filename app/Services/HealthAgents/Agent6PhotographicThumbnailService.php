@@ -42,8 +42,12 @@ class Agent6PhotographicThumbnailService
         if ($headline === '') {
             $headline = Str::words($project->title, 7, '');
         }
-        // Dọn sạch mọi thẻ kỹ thuật trước khi vẽ lên ảnh bìa
+        // Dọn sạch mọi thẻ kỹ thuật và giới hạn tối đa 7 từ để ảnh bìa thoáng, dễ đọc
         $headline = trim((string) preg_replace('/@\{[a-zA-Z0-9_:\-]+\}|\[[^\]]+\]/u', '', $headline));
+        $headlineWords = preg_split('/\s+/u', $headline) ?: [];
+        if (count($headlineWords) > 7) {
+            $headline = implode(' ', array_slice($headlineWords, 0, 7));
+        }
         $badgeRed = trim((string) ($seoMeta['cover_badge_red'] ?? ''));
 
         $channelName = AppSetting::getValue('channel_name', 'Sống Khỏe Mỗi Ngày');
@@ -87,12 +91,12 @@ class Agent6PhotographicThumbnailService
         $preferred = AppSetting::getValue('thumbnail_provider', 'openai');
         $cleanPrompt = $prompt . ', photorealistic editorial DSLR photography, warm natural lighting, sharp focus, vertical 9:16 portrait composition, strictly NO text, NO words, NO letters, NO watermark';
 
-        // Xây dựng thứ tự ưu tiên theo lựa chọn của người dùng
+        // Xây dựng thứ tự ưu tiên theo lựa chọn của người dùng, luôn có Gemini Image & Pexels DSLR Photo dự phòng trước khi lấy frame video
         $order = match ($preferred) {
-            'muse_ai' => ['muse_ai', 'openai', 'fal'],
-            'fal' => ['fal', 'openai', 'muse_ai'],
+            'muse_ai' => ['muse_ai', 'openai', 'fal', 'gemini_image', 'pexels_photo'],
+            'fal' => ['fal', 'openai', 'muse_ai', 'gemini_image', 'pexels_photo'],
             'scene_frame' => [],
-            default => ['openai', 'muse_ai', 'fal'],
+            default => ['openai', 'muse_ai', 'fal', 'gemini_image', 'pexels_photo'],
         };
 
         foreach ($order as $provider) {
@@ -103,6 +107,12 @@ class Agent6PhotographicThumbnailService
                 return true;
             }
             if ($provider === 'fal' && $this->tryFalPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'gemini_image' && $this->tryGeminiImagePhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'pexels_photo' && $this->tryPexelsPhotoSearch($project->title . ' ' . $prompt, $destPath)) {
                 return true;
             }
         }
@@ -258,6 +268,106 @@ class Agent6PhotographicThumbnailService
             }
         } catch (Throwable $e) {
             Log::warning('[Agent6Thumbnail] Fal error: ' . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Dự phòng 1: Sinh ảnh nền Photographic qua Gemini Image Generation (sử dụng sẵn Gemini API Key).
+     */
+    private function tryGeminiImagePhotographic(string $prompt, string $destPath): bool
+    {
+        $apiKey = AppSetting::getValue('gemini_api_key', (string) config('services.gemini.api_key', ''));
+        if ($apiKey === '') {
+            return false;
+        }
+
+        $baseUrl = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models'), '/');
+        foreach (['gemini-2.5-flash-image', 'gemini-2.0-flash-exp-image-generation'] as $model) {
+            try {
+                $response = Http::timeout(60)
+                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                    ->acceptJson()
+                    ->post("{$baseUrl}/{$model}:generateContent?key={$apiKey}", [
+                        'contents' => [
+                            [
+                                'role' => 'user',
+                                'parts' => [['text' => $prompt]],
+                            ],
+                        ],
+                        'generationConfig' => [
+                            'responseModalities' => ['IMAGE'],
+                        ],
+                    ]);
+
+                if (! $response->successful()) {
+                    continue;
+                }
+
+                $parts = data_get($response->json(), 'candidates.0.content.parts', []);
+                foreach ((array) $parts as $part) {
+                    $b64 = (string) (data_get($part, 'inlineData.data') ?: data_get($part, 'inline_data.data') ?: '');
+                    if ($b64 !== '') {
+                        file_put_contents($destPath, base64_decode($b64));
+                        if (is_file($destPath) && filesize($destPath) > 2048) {
+                            return true;
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                Log::warning("[Agent6Thumbnail] Gemini Image ({$model}) error: " . $e->getMessage());
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Dự phòng 2: Tìm ảnh chụp DSLR sắc nét từ Pexels Photo Search API (tránh dùng frame video mờ).
+     */
+    private function tryPexelsPhotoSearch(string $context, string $destPath): bool
+    {
+        $pexelsKey = AppSetting::getValue('pexels_api_key', (string) config('services.pexels.api_key', ''));
+        if ($pexelsKey === '') {
+            return false;
+        }
+
+        $lower = mb_strtolower($context);
+        $query = 'healthy green vegetables herbal tea';
+        if (str_contains($lower, 'tiểu đường') || str_contains($lower, 'đường huyết') || str_contains($lower, 'glucose')) {
+            $query = 'blood glucose meter healthy food';
+        } elseif (str_contains($lower, 'gan') || str_contains($lower, 'thận') || str_contains($lower, 'đông y')) {
+            $query = 'chinese herbal tea healthy herbs';
+        } elseif (str_contains($lower, 'người lớn tuổi') || str_contains($lower, 'bác sĩ')) {
+            $query = 'asian doctor healthy lifestyle';
+        }
+
+        try {
+            $response = Http::timeout(20)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders(['Authorization' => $pexelsKey])
+                ->get('https://api.pexels.com/v1/search', [
+                    'query' => $query,
+                    'orientation' => 'portrait',
+                    'per_page' => 6,
+                ]);
+
+            if (! $response->successful()) {
+                return false;
+            }
+
+            $photoUrl = (string) (data_get($response->json(), 'photos.0.src.large2x')
+                ?: data_get($response->json(), 'photos.0.src.large')
+                ?: '');
+
+            if ($photoUrl !== '') {
+                $dl = Http::timeout(30)->sink($destPath)->get($photoUrl);
+
+                return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] Pexels Photo error: ' . $e->getMessage());
         }
 
         return false;
