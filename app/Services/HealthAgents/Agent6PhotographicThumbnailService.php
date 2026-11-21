@@ -124,6 +124,48 @@ Ensure Vietnamese spelling is 100% accurate and crisp.";
         return $project->refresh();
     }
 
+    /**
+     * Tạo ảnh Photographic AI chuẩn 9:16 từ bất kỳ prompt nào (dùng chung cho Agent 6 và fallback cảnh Agent 4).
+     * Tự động thử theo thứ tự ưu tiên: Sangtao.ai / OpenAI / Gemini Image / Grok / DeepSeek / Muse AI / Fal.
+     */
+    public function generatePhotographicImageToPath(string $prompt, string $destPath): bool
+    {
+        $preferred = AppSetting::getValue('thumbnail_provider', 'sangtao');
+        $cleanPrompt = $prompt . ', photorealistic editorial DSLR photography, warm natural lighting, sharp focus, vertical 9:16 portrait composition, strictly NO text, NO words, NO letters, NO watermark';
+
+        $allProviders = ['sangtao', 'openai', 'gemini_image', 'grok', 'deepseek', 'muse_ai', 'fal'];
+        $order = match ($preferred) {
+            'scene_frame', 'pexels_photo' => $allProviders,
+            default => array_values(array_unique(array_merge([$preferred], $allProviders))),
+        };
+
+        foreach ($order as $provider) {
+            if ($provider === 'sangtao' && $this->trySangtaoAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'openai' && $this->tryOpenAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'gemini_image' && $this->tryGeminiImagePhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'grok' && $this->tryGrokPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'deepseek' && $this->tryDeepSeekPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'muse_ai' && $this->tryMuseAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'fal' && $this->tryFalPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function generatePhotographicBackground(VideoProject $project, string $prompt, string $destPath, bool $allowText = false): bool
     {
         $preferred = AppSetting::getValue('thumbnail_provider', 'sangtao');

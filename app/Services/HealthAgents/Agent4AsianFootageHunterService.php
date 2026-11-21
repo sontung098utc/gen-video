@@ -553,6 +553,7 @@ class Agent4AsianFootageHunterService
 
     /**
      * Tạo cảnh Photographic AI đúng 100% hành động lời thoại + chuyển động 60fps khi Stock không có clip đạt chuẩn.
+     * Tận dụng toàn bộ các cổng ảnh AI đã cấu hình (Sangtao.ai, ChatGPT/OpenAI, Gemini Image, Grok, Muse AI...).
      */
     private function generateAiSceneClipFallback(
         StoryboardScene $scene,
@@ -561,52 +562,21 @@ class Agent4AsianFootageHunterService
         string $videoOutputPath,
         string $imageOutputPath
     ): bool {
-        $apiKey = AppSetting::getValue('gemini_api_key', (string) config('services.gemini.api_key', ''));
-        if ($apiKey === '') {
-            return false;
-        }
+        $prompt = "Photorealistic DSLR health lifestyle photography, vertical 9:16 composition, warm natural daylight, authentic Vietnamese / East Asian setting, depicting: {$scene->visual_prompt} (context: {$scene->narration_text}). Natural human anatomy, crisp focus, strictly NO text, NO watermark";
 
-        $prompt = "Photorealistic DSLR health lifestyle photography, vertical 9:16 composition, warm natural daylight, authentic Vietnamese / East Asian setting, depicting: {$scene->visual_prompt} (context: {$scene->narration_text}). Natural human anatomy, crisp focus, strictly NO text, NO watermark.";
-        $baseUrl = rtrim((string) config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta/models'), '/');
+        $generated = app(Agent6PhotographicThumbnailService::class)->generatePhotographicImageToPath(
+            prompt: $prompt,
+            destPath: $imageOutputPath
+        );
 
-        foreach (['gemini-2.5-flash-image', 'gemini-2.0-flash-exp-image-generation'] as $model) {
-            try {
-                $response = Http::timeout(60)
-                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
-                    ->acceptJson()
-                    ->post("{$baseUrl}/{$model}:generateContent?key={$apiKey}", [
-                        'contents' => [[
-                            'role' => 'user',
-                            'parts' => [['text' => $prompt]],
-                        ]],
-                        'generationConfig' => [
-                            'responseModalities' => ['IMAGE'],
-                        ],
-                    ]);
-
-                if (! $response->successful()) {
-                    continue;
-                }
-
-                $parts = data_get($response->json(), 'candidates.0.content.parts', []);
-                foreach ((array) $parts as $part) {
-                    $b64 = (string) (data_get($part, 'inlineData.data') ?: data_get($part, 'inline_data.data') ?: '');
-                    if ($b64 !== '') {
-                        file_put_contents($imageOutputPath, base64_decode($b64));
-                        if (is_file($imageOutputPath) && filesize($imageOutputPath) > 2048) {
-                            return app(\App\Services\Media\FfmpegVideoCompositorService::class)->generateKenBurnsClip(
-                                imagePath: $imageOutputPath,
-                                durationMs: $durationMs,
-                                outputVideoPath: $videoOutputPath,
-                                cameraMotion: $scene->camera_motion ?: 'zoom_in',
-                                aspectRatio: $aspectRatio
-                            );
-                        }
-                    }
-                }
-            } catch (Throwable $e) {
-                Log::warning("[Agent4AiFallback] {$model} error: " . $e->getMessage());
-            }
+        if ($generated && is_file($imageOutputPath) && filesize($imageOutputPath) > 2048) {
+            return app(\App\Services\Media\FfmpegVideoCompositorService::class)->generateKenBurnsClip(
+                imagePath: $imageOutputPath,
+                durationMs: $durationMs,
+                outputVideoPath: $videoOutputPath,
+                cameraMotion: $scene->camera_motion ?: 'zoom_in',
+                aspectRatio: $aspectRatio
+            );
         }
 
         return false;
