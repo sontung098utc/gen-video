@@ -116,9 +116,14 @@ class EdgeTtsVietnameseService
                     $this->edgeTtsBinary,
                     '--voice',
                     $selectedVoice,
-                    '--rate=' . $effectiveRate,
-                    '--pitch=' . $this->defaultPitch,
                 ];
+                // Lần 1-2 thử truyền --rate trực tiếp; từ lần 3 bỏ --rate để tránh lỗi NoAudioReceived rồi chỉnh tốc độ chuẩn bằng FFmpeg atempo!
+                $usedCliRate = false;
+                if ($attempt <= 2) {
+                    $currentCommand[] = '--rate=' . $effectiveRate;
+                    $currentCommand[] = '--pitch=' . $this->defaultPitch;
+                    $usedCliRate = true;
+                }
                 if ($attempt >= 4) {
                     $sanitizedText = trim(preg_replace('/[^\p{L}\p{N}\s,\.\?]/u', ' ', $cleanText) ?? $cleanText);
                     file_put_contents($tempTextPath, $sanitizedText !== '' ? $sanitizedText : $cleanText);
@@ -137,6 +142,9 @@ class EdgeTtsVietnameseService
                 $process->run();
 
                 if ($process->isSuccessful() && is_file($audioFullPath) && filesize($audioFullPath) > 256) {
+                    if (! $usedCliRate && $effectiveRate !== '+0%' && $effectiveRate !== '0%') {
+                        $this->applyFfmpegTempoToMp3($audioFullPath, $effectiveRate);
+                    }
                     $synthesized = true;
                     break;
                 }
@@ -359,6 +367,41 @@ class EdgeTtsVietnameseService
             return is_file($audioFullPath) && filesize($audioFullPath) > 256;
         } catch (Throwable) {
             return false;
+        }
+    }
+
+    private function applyFfmpegTempoToMp3(string $mp3Path, string $rateStr): void
+    {
+        if (preg_match('/^([+-]?\d+)%$/', trim($rateStr), $m) !== 1) {
+            return;
+        }
+        $percent = (int) $m[1];
+        $tempo = max(0.70, min(1.50, 1.0 + ($percent / 100.0)));
+        if (abs($tempo - 1.0) < 0.02) {
+            return;
+        }
+
+        $tmpOut = $mp3Path . '.tempo.mp3';
+        $proc = new Process([
+            $this->ffmpegBinary,
+            '-y',
+            '-i',
+            $mp3Path,
+            '-filter:a',
+            sprintf('atempo=%.3f', $tempo),
+            '-c:a',
+            'libmp3lame',
+            '-b:a',
+            '128k',
+            $tmpOut,
+        ]);
+        $proc->setTimeout(30);
+        $proc->run();
+
+        if ($proc->isSuccessful() && is_file($tmpOut) && filesize($tmpOut) > 256) {
+            @rename($tmpOut, $mp3Path);
+        } else {
+            @unlink($tmpOut);
         }
     }
 
