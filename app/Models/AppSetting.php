@@ -118,8 +118,32 @@ class AppSetting extends Model
             ],
             'thumbnail_provider' => [
                 'group' => 'thumbnail',
-                'label' => 'Model sinh Ảnh Bìa Photographic ưu tiên (Agent 6)',
-                'default' => 'openai',
+                'label' => 'Model sinh Ảnh Bìa ưu tiên (Agent 6)',
+                'default' => 'sangtao',
+                'is_secret' => false,
+            ],
+            'thumbnail_mode' => [
+                'group' => 'thumbnail',
+                'label' => 'Chế độ thiết kế Ảnh Bìa (Agent 6)',
+                'default' => 'hybrid',
+                'is_secret' => false,
+            ],
+            'sangtao_api_key' => [
+                'group' => 'thumbnail',
+                'label' => 'Sangtao.ai API Key (sta1_...)',
+                'default' => (string) env('SANGTAO_API_KEY', ''),
+                'is_secret' => true,
+            ],
+            'sangtao_endpoint' => [
+                'group' => 'thumbnail',
+                'label' => 'Sangtao.ai Base URL',
+                'default' => (string) env('SANGTAO_ENDPOINT', 'https://api.tramsangtao.com/v1'),
+                'is_secret' => false,
+            ],
+            'sangtao_model' => [
+                'group' => 'thumbnail',
+                'label' => 'Model Sangtao.ai',
+                'default' => 'nano-banana-pro',
                 'is_secret' => false,
             ],
             'openai_api_key' => [
@@ -132,6 +156,36 @@ class AppSetting extends Model
                 'group' => 'thumbnail',
                 'label' => 'Model ảnh ChatGPT / OpenAI',
                 'default' => 'gpt-image-1',
+                'is_secret' => false,
+            ],
+            'grok_api_key' => [
+                'group' => 'thumbnail',
+                'label' => 'Grok (xAI) API Key (grok-imagine-image-2.0)',
+                'default' => (string) env('XAI_API_KEY', ''),
+                'is_secret' => true,
+            ],
+            'grok_image_model' => [
+                'group' => 'thumbnail',
+                'label' => 'Model ảnh Grok (xAI)',
+                'default' => 'grok-imagine-image-2.0',
+                'is_secret' => false,
+            ],
+            'deepseek_image_api_key' => [
+                'group' => 'thumbnail',
+                'label' => 'DeepSeek / Custom Image API Key',
+                'default' => (string) env('DEEPSEEK_IMAGE_API_KEY', ''),
+                'is_secret' => true,
+            ],
+            'deepseek_image_endpoint' => [
+                'group' => 'thumbnail',
+                'label' => 'DeepSeek / Custom Image Endpoint URL',
+                'default' => (string) env('DEEPSEEK_IMAGE_ENDPOINT', 'https://api.deepseek.com/v1/images/generations'),
+                'is_secret' => false,
+            ],
+            'deepseek_image_model' => [
+                'group' => 'thumbnail',
+                'label' => 'Model DeepSeek / Custom Image',
+                'default' => 'janus-pro-7b',
                 'is_secret' => false,
             ],
             'muse_ai_api_key' => [

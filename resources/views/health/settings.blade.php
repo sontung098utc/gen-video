@@ -101,7 +101,7 @@
                     'ai' => '2. Não Bộ AI (Agent 1, 2, 3, 8)',
                     'stock' => '3. Kho Video Stock Châu Á (Agent 4 — Pexels & Pixabay)',
                     'voice' => '4. Đa Giọng Đọc (Agent 5 — Google Cloud TTS, Vivibe/Vbee, GenMax)',
-                    'thumbnail' => '5. Sinh Ảnh Bìa Photographic (Agent 6 — ChatGPT / OpenAI & Muse AI)',
+                    'thumbnail' => '5. Sinh Ảnh Bìa Photographic (Agent 6 — Sangtao.ai, ChatGPT, Gemini, Grok, DeepSeek, Muse AI)',
                 ];
             @endphp
 
@@ -114,7 +114,7 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             @foreach ($defs as $key => $meta)
                                 @if ($meta['group'] === $groupKey)
-                                    <div class="{{ in_array($key, ['channel_tiktok_url', 'channel_fanpage_url', 'channel_youtube_url', 'vbee_endpoint', 'genmax_endpoint', 'muse_ai_endpoint'], true) ? 'sm:col-span-2' : '' }}">
+                                    <div class="{{ in_array($key, ['channel_tiktok_url', 'channel_fanpage_url', 'channel_youtube_url', 'vbee_endpoint', 'genmax_endpoint', 'muse_ai_endpoint', 'deepseek_image_endpoint'], true) ? 'sm:col-span-2' : '' }}">
                                         <label class="flex items-center justify-between text-xs font-bold text-slate-700 mb-1">
                                             <span>{{ $meta['label'] }}</span>
                                             @if ($meta['is_secret'])
@@ -126,10 +126,19 @@
 
                                         @if ($key === 'thumbnail_provider')
                                             <select name="thumbnail_provider" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
-                                                <option value="openai" @selected(($values[$key] ?? 'openai') === 'openai')>ChatGPT / OpenAI Image (gpt-image-1 / dall-e-3) — Khuyên dùng</option>
+                                                <option value="sangtao" @selected(($values[$key] ?? 'sangtao') === 'sangtao')>Sangtao.ai (Nano Banana Pro / Seedream — Khuyên dùng)</option>
+                                                <option value="openai" @selected(($values[$key] ?? '') === 'openai')>ChatGPT / OpenAI Image (gpt-image-1 / dall-e-3)</option>
+                                                <option value="gemini_image" @selected(($values[$key] ?? '') === 'gemini_image')>Google Gemini Image (Dùng sẵn Gemini API Key)</option>
+                                                <option value="grok" @selected(($values[$key] ?? '') === 'grok')>Grok xAI (grok-imagine-image-2.0)</option>
+                                                <option value="deepseek" @selected(($values[$key] ?? '') === 'deepseek')>DeepSeek / Custom Image Endpoint</option>
                                                 <option value="muse_ai" @selected(($values[$key] ?? '') === 'muse_ai')>Muse AI (Photographic Image Generation)</option>
                                                 <option value="fal" @selected(($values[$key] ?? '') === 'fal')>Fal.ai Flux Schnell (Dự phòng)</option>
                                                 <option value="scene_frame" @selected(($values[$key] ?? '') === 'scene_frame')>Trích khung hình đẹp từ video (Miễn phí)</option>
+                                            </select>
+                                        @elseif ($key === 'thumbnail_mode')
+                                            <select name="thumbnail_mode" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+                                                <option value="hybrid" @selected(($values[$key] ?? 'hybrid') === 'hybrid')>Kết hợp: AI tạo nền Photographic + HTML vẽ chữ tiếng Việt chuẩn 100%</option>
+                                                <option value="full_ai_poster" @selected(($values[$key] ?? '') === 'full_ai_poster')>Full AI Poster: Giao AI tự vẽ toàn bộ ảnh bìa & chữ tiêu đề</option>
                                             </select>
                                         @elseif ($key === 'openai_image_model')
                                             <select name="openai_image_model" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">

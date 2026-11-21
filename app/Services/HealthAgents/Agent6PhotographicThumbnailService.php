@@ -58,14 +58,25 @@ class Agent6PhotographicThumbnailService
         $bgPrompt = trim((string) ($seoMeta['thumbnail_visual_prompt']
             ?? 'Bright sunlit editorial studio food and herbal photography of healthy green vegetables, fresh herbs and warm herbal tea on a rustic wooden table, blurred sunny green garden bokeh background at top, vibrant natural colors, no text, no watermark'));
 
-        $bgTempPath = storage_path("app/temp/project_{$project->id}_cover_bg.jpg");
-        $this->ensureParentDirectory($bgTempPath);
-
-        $bgReady = $this->generatePhotographicBackground($project, $bgPrompt, $bgTempPath);
-
         $thumbRel = sprintf('thumbnails/project_%d_cover_%s.jpg', $project->id, date('Ymd_His'));
         $thumbFull = $disk->path($thumbRel);
         $this->ensureParentDirectory($thumbFull);
+
+        $mode = AppSetting::getValue('thumbnail_mode', 'hybrid');
+        if ($mode === 'full_ai_poster') {
+            $posterPrompt = "Create a vibrant 9:16 vertical Vietnamese health YouTube Shorts / TikTok cover poster for channel '{$channelName}'. Top section: sunny bright green leaves bokeh background with a small white rounded badge reading '{$channelName}' at top center, giant bold yellow uppercase headline with thick black outline reading '{$headline}', and a red pill banner reading '{$badgeRed}'. Bottom half: crisp photorealistic editorial photography of: {$bgPrompt}. Ensure Vietnamese text spelling is exact and ultra sharp.";
+            $posterReady = $this->generatePhotographicBackground($project, $posterPrompt, $thumbFull, true);
+            if ($posterReady && is_file($thumbFull)) {
+                $project->update(['thumbnail_path' => $thumbRel]);
+
+                return $project->refresh();
+            }
+        }
+
+        $bgTempPath = storage_path("app/temp/project_{$project->id}_cover_bg.jpg");
+        $this->ensureParentDirectory($bgTempPath);
+
+        $bgReady = $this->generatePhotographicBackground($project, $bgPrompt, $bgTempPath, false);
 
         $rendered = $this->renderTypographyOverlay(
             bgImagePath: $bgReady ? $bgTempPath : null,
@@ -90,21 +101,33 @@ class Agent6PhotographicThumbnailService
         return $project->refresh();
     }
 
-    private function generatePhotographicBackground(VideoProject $project, string $prompt, string $destPath): bool
+    private function generatePhotographicBackground(VideoProject $project, string $prompt, string $destPath, bool $allowText = false): bool
     {
-        $preferred = AppSetting::getValue('thumbnail_provider', 'openai');
-        $cleanPrompt = $prompt . ', photorealistic editorial DSLR photography, warm natural lighting, sharp focus, vertical 9:16 portrait composition, strictly NO text, NO words, NO letters, NO watermark';
+        $preferred = AppSetting::getValue('thumbnail_provider', 'sangtao');
+        $cleanPrompt = $allowText
+            ? $prompt
+            : $prompt . ', photorealistic editorial DSLR photography, warm natural lighting, sharp focus, vertical 9:16 portrait composition, strictly NO text, NO words, NO letters, NO watermark';
 
-        // Xây dựng thứ tự ưu tiên theo lựa chọn của người dùng, luôn có Gemini Image & Pexels DSLR Photo dự phòng trước khi lấy frame video
+        $allProviders = ['sangtao', 'openai', 'gemini_image', 'grok', 'deepseek', 'muse_ai', 'fal', 'pexels_photo'];
         $order = match ($preferred) {
-            'muse_ai' => ['muse_ai', 'openai', 'fal', 'gemini_image', 'pexels_photo'],
-            'fal' => ['fal', 'openai', 'muse_ai', 'gemini_image', 'pexels_photo'],
             'scene_frame' => [],
-            default => ['openai', 'muse_ai', 'fal', 'gemini_image', 'pexels_photo'],
+            default => array_values(array_unique(array_merge([$preferred], $allProviders))),
         };
 
         foreach ($order as $provider) {
+            if ($provider === 'sangtao' && $this->trySangtaoAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
             if ($provider === 'openai' && $this->tryOpenAiPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'gemini_image' && $this->tryGeminiImagePhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'grok' && $this->tryGrokPhotographic($cleanPrompt, $destPath)) {
+                return true;
+            }
+            if ($provider === 'deepseek' && $this->tryDeepSeekPhotographic($cleanPrompt, $destPath)) {
                 return true;
             }
             if ($provider === 'muse_ai' && $this->tryMuseAiPhotographic($cleanPrompt, $destPath)) {
@@ -113,10 +136,7 @@ class Agent6PhotographicThumbnailService
             if ($provider === 'fal' && $this->tryFalPhotographic($cleanPrompt, $destPath)) {
                 return true;
             }
-            if ($provider === 'gemini_image' && $this->tryGeminiImagePhotographic($cleanPrompt, $destPath)) {
-                return true;
-            }
-            if ($provider === 'pexels_photo' && $this->tryPexelsPhotoSearch($project->title . ' ' . $prompt, $destPath)) {
+            if (! $allowText && $provider === 'pexels_photo' && $this->tryPexelsPhotoSearch($project->title . ' ' . $prompt, $destPath)) {
                 return true;
             }
         }
@@ -131,6 +151,194 @@ class Agent6PhotographicThumbnailService
                     return true;
                 }
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Sinh ảnh qua Sangtao.ai (`POST /v1/generate` -> poll `GET /v1/jobs/{job_id}`).
+     */
+    private function trySangtaoAiPhotographic(string $prompt, string $destPath): bool
+    {
+        $apiKey = AppSetting::getValue('sangtao_api_key', '');
+        if ($apiKey === '') {
+            return false;
+        }
+
+        $baseUrl = rtrim(AppSetting::getValue('sangtao_endpoint', 'https://api.tramsangtao.com/v1'), '/');
+        $model = AppSetting::getValue('sangtao_model', 'nano-banana-pro');
+
+        try {
+            $resp = Http::timeout(45)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
+                ->acceptJson()
+                ->post("{$baseUrl}/generate", [
+                    'model' => $model,
+                    'prompt' => $prompt,
+                    'params' => [
+                        'aspect_ratio' => '9:16',
+                        'resolution' => '2k',
+                    ],
+                ]);
+
+            if (! $resp->successful()) {
+                Log::warning('[Agent6Thumbnail] Sangtao.ai HTTP ' . $resp->status() . ': ' . mb_substr($resp->body(), 0, 250));
+
+                return false;
+            }
+
+            $json = $resp->json();
+            $directUrl = (string) (data_get($json, 'outputs.0') ?: data_get($json, 'data.0.url') ?: data_get($json, 'url') ?: '');
+            if ($directUrl !== '') {
+                $dl = Http::timeout(60)->sink($destPath)->get($directUrl);
+
+                return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+            }
+
+            $jobId = (string) (data_get($json, 'job_id') ?: data_get($json, 'id') ?: data_get($json, 'data.job_id') ?: '');
+            if ($jobId === '') {
+                return false;
+            }
+
+            // Poll tối đa 25 lần (50 giây)
+            for ($i = 0; $i < 25; $i++) {
+                sleep(2);
+                $poll = Http::timeout(20)
+                    ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                    ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
+                    ->acceptJson()
+                    ->get("{$baseUrl}/jobs/{$jobId}");
+
+                if (! $poll->successful()) {
+                    continue;
+                }
+
+                $pJson = $poll->json();
+                $status = strtolower((string) (data_get($pJson, 'status') ?: data_get($pJson, 'state') ?: ''));
+                $outUrl = (string) (data_get($pJson, 'outputs.0')
+                    ?: data_get($pJson, 'outputs.0.url')
+                    ?: data_get($pJson, 'result.url')
+                    ?: data_get($pJson, 'result.images.0')
+                    ?: '');
+
+                if ($outUrl !== '') {
+                    $dl = Http::timeout(60)->sink($destPath)->get($outUrl);
+
+                    return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+                }
+
+                if (in_array($status, ['failed', 'error', 'cancelled'], true)) {
+                    Log::warning('[Agent6Thumbnail] Sangtao.ai job failed: ' . mb_substr($poll->body(), 0, 250));
+
+                    return false;
+                }
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] Sangtao.ai error: ' . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Sinh ảnh qua xAI Grok (`https://api.x.ai/v1/images/generations`, `grok-imagine-image-2.0`).
+     */
+    private function tryGrokPhotographic(string $prompt, string $destPath): bool
+    {
+        $apiKey = AppSetting::getValue('grok_api_key', '');
+        if ($apiKey === '') {
+            return false;
+        }
+
+        $model = AppSetting::getValue('grok_image_model', 'grok-imagine-image-2.0');
+
+        try {
+            $response = Http::timeout(60)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
+                ->acceptJson()
+                ->post('https://api.x.ai/v1/images/generations', [
+                    'model' => $model,
+                    'prompt' => $prompt,
+                    'n' => 1,
+                    'aspect_ratio' => '9:16',
+                ]);
+
+            if (! $response->successful()) {
+                Log::warning('[Agent6Thumbnail] Grok xAI HTTP ' . $response->status() . ': ' . mb_substr($response->body(), 0, 250));
+
+                return false;
+            }
+
+            $b64 = (string) data_get($response->json(), 'data.0.b64_json', '');
+            if ($b64 !== '') {
+                file_put_contents($destPath, base64_decode($b64));
+
+                return is_file($destPath) && filesize($destPath) > 2048;
+            }
+
+            $url = (string) data_get($response->json(), 'data.0.url', '');
+            if ($url !== '') {
+                $dl = Http::timeout(60)->sink($destPath)->get($url);
+
+                return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] Grok xAI error: ' . $e->getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Sinh ảnh qua DeepSeek / Custom OpenAI-compatible Image Endpoint.
+     */
+    private function tryDeepSeekPhotographic(string $prompt, string $destPath): bool
+    {
+        $apiKey = AppSetting::getValue('deepseek_image_api_key', '');
+        $endpoint = AppSetting::getValue('deepseek_image_endpoint', '');
+        if ($apiKey === '' || $endpoint === '') {
+            return false;
+        }
+
+        $model = AppSetting::getValue('deepseek_image_model', 'janus-pro-7b');
+
+        try {
+            $response = Http::timeout(60)
+                ->withOptions(['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]])
+                ->withHeaders(['Authorization' => 'Bearer ' . $apiKey])
+                ->acceptJson()
+                ->post($endpoint, [
+                    'model' => $model,
+                    'prompt' => $prompt,
+                    'n' => 1,
+                    'size' => '1024x1792',
+                ]);
+
+            if (! $response->successful()) {
+                Log::warning('[Agent6Thumbnail] DeepSeek/Custom Image HTTP ' . $response->status() . ': ' . mb_substr($response->body(), 0, 250));
+
+                return false;
+            }
+
+            $json = $response->json();
+            $b64 = (string) (data_get($json, 'data.0.b64_json') ?: data_get($json, 'image_base64') ?: '');
+            if ($b64 !== '') {
+                file_put_contents($destPath, base64_decode($b64));
+
+                return is_file($destPath) && filesize($destPath) > 2048;
+            }
+
+            $url = (string) (data_get($json, 'data.0.url') ?: data_get($json, 'url') ?: '');
+            if ($url !== '') {
+                $dl = Http::timeout(60)->sink($destPath)->get($url);
+
+                return $dl->successful() && is_file($destPath) && filesize($destPath) > 2048;
+            }
+        } catch (Throwable $e) {
+            Log::warning('[Agent6Thumbnail] DeepSeek/Custom Image error: ' . $e->getMessage());
         }
 
         return false;
