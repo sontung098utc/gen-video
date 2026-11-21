@@ -46,7 +46,11 @@ class Agent6PhotographicThumbnailService
         $headline = trim((string) preg_replace('/@\{[a-zA-Z0-9_:\-]+\}|\[[^\]]+\]/u', '', $headline));
         $headlineWords = preg_split('/\s+/u', $headline) ?: [];
         if (count($headlineWords) > 7) {
-            $headline = implode(' ', array_slice($headlineWords, 0, 7));
+            $headlineWords = array_slice($headlineWords, 0, 7);
+            while (count($headlineWords) > 3 && in_array(mb_strtolower((string) end($headlineWords)), ['mà', 'của', 'và', 'khi', 'cho', 'với', 'ở', 'tại', 'để', 'thì'], true)) {
+                array_pop($headlineWords);
+            }
+            $headline = implode(' ', $headlineWords);
         }
         $badgeRed = trim((string) ($seoMeta['cover_badge_red'] ?? ''));
 
