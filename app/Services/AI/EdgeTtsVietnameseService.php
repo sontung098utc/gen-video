@@ -112,16 +112,13 @@ class EdgeTtsVietnameseService
                 @unlink($audioFullPath);
                 @unlink($subtitleFullPath);
 
-                // Từ lần thử thứ 3 trở đi, bỏ qua --rate/--pitch để tránh lỗi SSML prosody hoặc làm sạch dấu câu đặc biệt
                 $currentCommand = [
                     $this->edgeTtsBinary,
                     '--voice',
                     $selectedVoice,
+                    '--rate=' . $effectiveRate,
+                    '--pitch=' . $this->defaultPitch,
                 ];
-                if ($attempt <= 2) {
-                    $currentCommand[] = '--rate=' . $effectiveRate;
-                    $currentCommand[] = '--pitch=' . $this->defaultPitch;
-                }
                 if ($attempt >= 4) {
                     $sanitizedText = trim(preg_replace('/[^\p{L}\p{N}\s,\.\?]/u', ' ', $cleanText) ?? $cleanText);
                     file_put_contents($tempTextPath, $sanitizedText !== '' ? $sanitizedText : $cleanText);
@@ -171,10 +168,7 @@ class EdgeTtsVietnameseService
             @unlink($tempTextPath);
         }
 
-        // Dự phòng cuối cùng cùng giới tính (tránh sập luồng khi WebSocket Microsoft Edge-TTS tạm thời quá tải)
-        if (! $synthesized) {
-            $synthesized = $this->synthesizeSameGenderBackup($cleanText, $selectedVoice, $audioFullPath);
-        }
+        // TUYỆT ĐỐI KHÔNG âm thầm đổi sang giọng đọc dự phòng khác (gTTS/SAPI) gây hiện tượng 2 giọng trong cùng 1 video!
 
         if (! $synthesized) {
             $errorMsg = sprintf(

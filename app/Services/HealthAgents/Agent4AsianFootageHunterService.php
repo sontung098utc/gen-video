@@ -297,7 +297,7 @@ class Agent4AsianFootageHunterService
                     ->get('https://api.pexels.com/videos/search', [
                         'query' => $q,
                         'orientation' => $orientation,
-                        'per_page' => 12,
+                        'per_page' => 20,
                     ]);
 
                 if (! $response->successful()) {
@@ -357,7 +357,7 @@ class Agent4AsianFootageHunterService
                     }
                 }
 
-                if ($bestFallbackUrl !== null && $bestFallbackScore >= 3) {
+                if ($bestFallbackUrl !== null && $bestFallbackScore >= 5) {
                     if ($bestFallbackId !== null) {
                         $this->usedVideoIds[] = $bestFallbackId;
                     }
@@ -568,15 +568,15 @@ class Agent4AsianFootageHunterService
                 : "Visual target: \"{$query}\".";
 
             $res = $this->gemini->generateJson(
-                systemPrompt: 'You are a visual ethnicity & relevance screener for a Vietnamese health channel. Return JSON {"observed": "short description", "relevance_score": 1-10, "accept": true/false}.',
-                userPrompt: "Inspect this video preview frame. {$contextNote}\nFirst describe what is literally in the frame in `observed`.\nSet `accept`: false if:\n1. ANY visible person looks European, Caucasian, Black/African, Middle Eastern, or non-East-Asian.\n2. The scene has an absurd/unrelated prop or activity (playing musical instrument/erhu, writing diary/notebook, sitting on a boat, dancing, stethoscope for blood sugar, pouring water for foot numbness).\nOtherwise set `accept`: true and rate `relevance_score` from 1 to 10 (5+ = acceptable match, 7+ = strong match).",
+                systemPrompt: 'You are a strict visual ethnicity & relevance screener for a Vietnamese health channel. Return JSON {"observed": "short description", "relevance_score": 1-10, "accept": true/false}.',
+                userPrompt: "Inspect this video preview frame. {$contextNote}\nFirst describe what is literally in the frame in `observed`.\nSet `accept`: false if:\n1. ANY visible person looks Caucasian/European, Black/African, Middle Eastern, or non-East-Asian, OR is an unidentifiable dark silhouette.\n2. The scene has an unrelated/weird mood or prop (playing musical instrument/erhu, writing diary/notebook, sitting on a boat, blue neon artistic lighting, luxury spa pedicure with dark nail polish, smiling/stretching in bed when narration is about nighttime urination, stethoscope for blood sugar, pouring water for foot numbness).\nSet `accept`: true ONLY if visible people are clearly Vietnamese / Chinese / East Asian (or neutral close-up of food, water, medical meter) AND the action fits the narration. Rate `relevance_score` 1-10 (5+ = acceptable, 7+ = strong match).",
                 actionType: 'agent4_vision_ethnicity_check',
                 imagePaths: [$tmpImg],
                 temperature: 0.1
             );
 
             $score = (int) ($res['relevance_score'] ?? 0);
-            $accept = ((bool) ($res['accept'] ?? false)) && $score >= 3;
+            $accept = ((bool) ($res['accept'] ?? false)) && $score >= 5;
 
             return ['accept' => $accept, 'score' => $score];
         } catch (Throwable) {

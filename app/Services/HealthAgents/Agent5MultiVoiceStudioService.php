@@ -115,6 +115,7 @@ class Agent5MultiVoiceStudioService
         $provider = trim((string) ($project->voice_provider ?: 'edge_tts'));
         $voiceId = trim((string) ($project->voice_id ?: 'vi-VN-HoaiMyNeural'));
         $speed = max(0.75, min(1.35, (float) ($project->voice_speed ?: 1.00)));
+        $voiceHash = substr(md5($provider . '|' . $voiceId . '|' . number_format($speed, 2, '.', '')), 0, 8);
 
         $totalDurationMs = 0;
 
@@ -122,6 +123,7 @@ class Agent5MultiVoiceStudioService
             if (
                 ! $forceRegenerate
                 && $scene->voice_file_path
+                && str_contains($scene->voice_file_path, $voiceHash)
                 && Storage::disk('public')->exists($scene->voice_file_path)
                 && $scene->subtitle_file_path
                 && Storage::disk('public')->exists($scene->subtitle_file_path)
@@ -136,7 +138,7 @@ class Agent5MultiVoiceStudioService
                 $cleanText = 'Sống Khỏe Mỗi Ngày chia sẻ kiến thức chăm sóc sức khỏe hữu ích.';
             }
 
-            $prefix = sprintf('project_%d_scene_%02d_a5_%s', $project->id, $scene->scene_order, $provider);
+            $prefix = sprintf('project_%d_scene_%02d_a5_%s_%s', $project->id, $scene->scene_order, $provider, $voiceHash);
             $result = $this->synthesizeSingleScene($project, $scene, $cleanText, $provider, $voiceId, $speed, $prefix);
 
             $scene->update([
