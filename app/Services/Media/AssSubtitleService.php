@@ -164,7 +164,7 @@ class AssSubtitleService
         $playResX = $isVertical ? 1080 : 1920;
         $playResY = $isVertical ? 1920 : 1080;
         $fontSize = $isVertical ? 64 : 52;
-        $marginV = $isVertical ? 280 : 95;
+        $marginV = $isVertical ? 340 : 95;
         $fontName = 'Montserrat';
 
         // Trong định dạng ASS: Màu sắc viết theo dạng &HAABBGGRR (BGR ngược với RGB)

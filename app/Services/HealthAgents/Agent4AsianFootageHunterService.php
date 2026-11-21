@@ -39,6 +39,9 @@ class Agent4AsianFootageHunterService
     /** @var array<int, string> */
     private array $usedRemoteUrls = [];
 
+    /** @var array<int, int|string> */
+    private array $usedVideoIds = [];
+
     public function __construct(
         private readonly HealthGeminiClient $gemini
     ) {
@@ -54,6 +57,7 @@ class Agent4AsianFootageHunterService
     {
         $this->usedLocalAssetIds = [];
         $this->usedRemoteUrls = [];
+        $this->usedVideoIds = [];
         $project->load('scenes');
 
         foreach ($project->scenes as $scene) {
@@ -68,6 +72,35 @@ class Agent4AsianFootageHunterService
             $durationMs = max(2500, (int) $scene->duration_ms);
             $prefix = sprintf('project_%d_scene_%02d_a4_%s', $project->id, $scene->scene_order, substr(md5((string) microtime(true)), 0, 6));
 
+            $result = $this->fetchAndPrepareScene($project, $scene, $prefix, $durationMs);
+
+            $scene->update([
+                'video_file_path' => $result['video_relative_path'],
+                'image_file_path' => $result['image_relative_path'],
+            ]);
+        }
+
+        return $project->refresh()->load('scenes');
+    }
+
+    /**
+     * Chỉ tìm và thay thế lại video cho các phân cảnh bị Trưởng phòng Agent 8 đánh dấu FAIL.
+     *
+     * @param  array<int, int>  $sceneOrders
+     */
+    public function huntSpecificScenes(VideoProject $project, array $sceneOrders): VideoProject
+    {
+        $project->load('scenes');
+        $targets = array_map('intval', $sceneOrders);
+
+        foreach ($project->scenes as $scene) {
+            if (! in_array((int) $scene->scene_order, $targets, true)) {
+                continue;
+            }
+
+            $durationMs = max(2500, (int) $scene->duration_ms);
+            // Dịch chuyển scene_order ảo +3 để chọn ứng viên mới khác hẳn video cũ
+            $prefix = sprintf('project_%d_scene_%02d_rework_%s', $project->id, $scene->scene_order, substr(md5((string) microtime(true)), 0, 6));
             $result = $this->fetchAndPrepareScene($project, $scene, $prefix, $durationMs);
 
             $scene->update([
@@ -262,6 +295,11 @@ class Agent4AsianFootageHunterService
                 $ordered = array_merge(array_slice($videos, $offset), array_slice($videos, 0, $offset));
 
                 foreach ($ordered as $vid) {
+                    $vidId = $vid['id'] ?? null;
+                    if ($vidId !== null && in_array($vidId, $this->usedVideoIds, true)) {
+                        continue;
+                    }
+
                     $files = is_array($vid['video_files'] ?? null) ? $vid['video_files'] : [];
                     $bestUrl = $this->pickBestPexelsFile($files);
                     if ($bestUrl === null || in_array($bestUrl, $this->usedRemoteUrls, true)) {
@@ -272,6 +310,10 @@ class Agent4AsianFootageHunterService
                     if ($previewImageUrl !== '' && ! $this->isAsianOrNeutralSubjectPreview($previewImageUrl, $q, $sceneNarration)) {
                         Log::info('[Agent4AsianFootage] Loại bỏ video không phù hợp (ngoài châu Á hoặc lệch kịch bản): ' . ($vid['url'] ?? $bestUrl));
                         continue;
+                    }
+
+                    if ($vidId !== null) {
+                        $this->usedVideoIds[] = $vidId;
                     }
 
                     return $bestUrl;

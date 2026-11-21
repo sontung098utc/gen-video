@@ -55,9 +55,14 @@ QUY CHUẨN CHÍNH SÁCH NỀN TẢNG:
 QUY CHUẨN KỊCH BẢN TRỌNG TÂM — KHÔNG LAN MAN (BẮT BUỘC):
 1. **Cảnh 1 (HOOK 0–3 giây đầu — CỰC QUAN TRỌNG)**: Đánh thẳng vào nỗi lo hoặc sự tò mò ngay câu đầu tiên (VD: *"Nhiều người lớn tuổi đang có 5 dấu hiệu tiền tiểu đường này nhưng lại tưởng do tuổi già!"*). TUYỆT ĐỐI KHÔNG chào hỏi dài dòng, không nói chung chung.
 2. **ĐÚNG TRỌNG TÂM DẠNG DANH SÁCH (NẾU CÓ)**: Nếu tiêu đề có con số liệt kê (VD: *"5 dấu hiệu..."*, *"7 lợi ích..."*, *"3 sai lầm..."*), BẮT BUỘC các cảnh 2, 3, 4, 5 phải **liệt kê ĐẦY ĐỦ, RÕ RÀNG TỪNG MỤC (Thứ nhất là..., Thứ hai là..., Thứ ba là..., Thứ tư là..., Thứ năm là...)** sát với tiêu đề! KHÔNG được bỏ dở danh sách để nói lan man sang giải pháp chung chung.
-3. **Cảnh cuối (Cảnh 6 — CTA + TỪ CHỐI TRÁCH NHIỆM Y KHOA BẮT BUỘC)**: Mời theo dõi kênh {$channelName} VÀ **BẮT BUỘC kết thúc bằng câu từ chối trách nhiệm**: *"Lưu ý: Nội dung chỉ mang tính chất tham khảo, không thay thế chẩn đoán hay chỉ định của bác sĩ."*
+3. **Cảnh cuối (Cảnh 6 — THÔNG ĐIỆP XÉT NGHIỆM + CTA + TỪ CHỐI TRÁCH NHIỆM BẮT BUỘC)**:
+   - Nếu video nói về dấu hiệu/triệu chứng, BẮT BUỘC nhấn mạnh: *"Những biểu hiện này không đủ để kết luận bệnh — đừng chờ có triệu chứng mới đi kiểm tra hay xét nghiệm định kỳ."*
+   - Kết thúc bằng lời mời theo dõi kênh {$channelName} và câu từ chối trách nhiệm: *"Nội dung chỉ mang tính tham khảo, không thay thế chẩn đoán của bác sĩ."*
 4. **Thẻ SFX**: Chỉ dùng tối đa 1–2 thẻ `@{pop}` hoặc `@{ding}` ở điểm nhấn quan trọng nhất trong cả video (KHÔNG dùng `@{whoosh}`).
-5. **visual_prompt (TIẾNG ANH 3–5 TỪ)**: PHẢI mô tả cực sát hành động/triệu chứng/thực phẩm của từng cảnh với **người Việt Nam / Trung Quốc** hoặc **cận cảnh y tế/thực phẩm** (VD: người lớn tuổi châu Á mệt mỏi -> `"elderly asian man feeling tired"`, khát nước -> `"elderly asian drinking water"`, tiểu đêm/kiểm tra đường huyết -> `"blood sugar meter glucometer test"`, mờ mắt -> `"elderly asian rubbing eyes"`, tê bì chân tay -> `"elderly person massaging leg"`).
+5. **visual_prompt (TIẾNG ANH 4–6 TỪ — CỤ THỂ HÀNH ĐỘNG & KHÔNG LẶP GÓC MÁY)**:
+   - PHẢI mô tả HÀNH ĐỘNG CỤ THỂ khớp 100% lời thoại từng cảnh (không chung chung, không dùng cảnh du lịch/ngồi thuyền, không dùng ống nghe thay cho đo đường huyết).
+   - Các cảnh liên tiếp PHẢI khác nhau về hành động và góc quay (cận cảnh bàn chân/bàn tay, uống nước, thức dậy ban đêm, máy đo đường huyết...).
+   - VD chuẩn: khát nước -> `"asian woman drinking glass water"`, tiểu đêm -> `"person waking up night lamp"`, tê bì chân -> `"close up hands massaging foot"`, mệt mỏi -> `"elderly asian tired sitting chair"`, đo đường huyết -> `"blood glucose meter finger test"`.
 
 Cấu trúc JSON:
 {

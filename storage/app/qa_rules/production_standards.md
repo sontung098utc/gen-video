@@ -6,10 +6,14 @@ Mọi video trước khi duyệt xuất bản PHẢI vượt qua 100% các tiêu
 - Âm lượng giọng đọc rõ ràng, không méo tiếng, không bị nhạc nền lấn át (nhạc nền tự động hạ âm lượng khi có lời thoại).
 - Không có bất kỳ phân cảnh nào bị thiếu file âm thanh hoặc thời lượng = 0.
 
-## 2. Hình Ảnh & Video Stock Châu Á (Agent AI 4)
-- Video mẫu phải phù hợp nội dung lời thoại từng cảnh (không ghép cảnh lệch chủ đề).
-- Ưu tiên bối cảnh, con người châu Á (Việt Nam, Trung Quốc), thảo dược, món ăn quen thuộc với khán giả Việt.
-- Định dạng dọc chuẩn 9:16 (1080x1920), sắc nét, không đen khung hình.
+## 2. Hình Ảnh & Độ Khớp Lời Thoại Từng Phân Cảnh (Agent AI 4 — PASS / FAIL)
+- **Kiểm duyệt từng cảnh (PASS / FAIL)**: Mọi phân cảnh phải minh họa ĐÚNG hành động, đúng bộ phận cơ thể và đúng ngữ cảnh lời thoại:
+  - Khát nước → Người uống nước (không dùng cảnh chung chung).
+  - Tiểu đêm → Người thức dậy ban đêm, bật đèn/đi vệ sinh (không dùng cảnh phòng ngủ trống kéo dài).
+  - Tê bì chân tay → Cận cảnh xoa bàn chân, ngón chân hoặc bàn tay (không dùng cảnh du lịch/ngồi thuyền).
+  - Kiểm tra đường huyết → Máy đo đường huyết, que thử, lấy mẫu máu xét nghiệm (không dùng cảnh đeo ống nghe chung chung).
+- **Không lặp cảnh / không lệch vùng miền**: Không dùng liên tiếp 2 cảnh có bố cục hoặc hành động giống nhau; loại bỏ 100% người châu Âu, châu Phi.
+- Định dạng dọc chuẩn 9:16 (1080x1920), ưu tiên chuyển động thực tế, sắc nét.
 
 ## 3. Hiệu Ứng Chuyển Cảnh & Hiệu Ứng Âm Thanh CapCut (Agent AI 7)
 - Chuyển cảnh (`fade`, `smoothleft`, `wipeup`, `dissolve`...) mượt mà, đúng nhịp chuyển ý, không giật cục.

@@ -186,6 +186,34 @@ class Agent8QaDirectorService
                 }
             }
 
+            // Kiểm duyệt từng phân cảnh (PASS / FAIL): Nếu có cảnh hình ảnh lệch lời thoại -> đánh dấu failed_scenes & ép Agent 4 thay cảnh đó
+            $failedSceneOrders = [];
+            $sceneAuditSummary = [];
+            if (is_array($aiResult['scene_audit'] ?? null)) {
+                foreach ($aiResult['scene_audit'] as $sa) {
+                    if (! is_array($sa)) {
+                        continue;
+                    }
+                    $order = (int) ($sa['scene_order'] ?? 0);
+                    $status = strtoupper(trim((string) ($sa['status'] ?? 'PASS')));
+                    $reason = trim((string) ($sa['reason'] ?? ''));
+                    if ($order > 0 && $status === 'FAIL') {
+                        $failedSceneOrders[] = $order;
+                        $sceneAuditSummary[] = "Cảnh {$order} FAIL: {$reason}";
+                    }
+                }
+            }
+
+            if ($failedSceneOrders !== []) {
+                $failedAgents[] = 'agent4';
+                $checklist['visual_match'] = [
+                    'pass' => false,
+                    'score' => min(60, (int) ($checklist['visual_match']['score'] ?? 60)),
+                    'note' => implode(' | ', $sceneAuditSummary),
+                    'failed_scenes' => array_values(array_unique($failedSceneOrders)),
+                ];
+            }
+
             $aiFeedback = trim((string) ($aiResult['feedback_notes'] ?? ''));
         } catch (Throwable $e) {
             Log::warning('[Agent8QaDirector] Dùng kết quả kiểm tra Tầng 1 do Gemini bận: ' . $e->getMessage());
@@ -262,11 +290,18 @@ Bạn phải đối chiếu nghiêm ngặt sản phẩm với 3 bộ quy chuẩn
 [3. TIÊU CHUẨN KỸ THUẬT]
 {$standards}
 
-Hãy kiểm tra cả ảnh bìa đính kèm (nếu có) xem chữ tiếng Việt trên ảnh bìa có bị sai chính tả, mất dấu hay dính mã kỹ thuật không.
-Chỉ trả về `failed_agents` khi thực sự có lỗi cần làm lại (nếu video đã tốt >= 80 điểm, hãy để `failed_agents: []`).
+Hãy kiểm tra:
+1. Ảnh bìa đính kèm (ảnh đầu tiên nếu có): chữ tiếng Việt có bị sai chính tả, mất dấu hay dính mã kỹ thuật không.
+2. **KIỂM DUYỆT TỪNG PHÂN CẢNH (PASS / FAIL)** dựa trên các ảnh khung hình phân cảnh đính kèm theo thứ tự Cảnh 1 → Cảnh {$project->scenes->count()}:
+   - Cảnh có minh họa ĐÚNG hành động/bộ phận/ngữ cảnh lời thoại không? (VD: nói tiểu đêm mà phòng trống không rõ người dậy -> FAIL; nói tê bì chân mà cảnh ngồi thuyền du lịch -> FAIL; nói đo đường huyết mà đeo ống nghe -> FAIL).
+   - Không có 2 cảnh liên tiếp lặp cùng góc máy/hành động; không có người châu Âu/châu Phi.
+Chỉ trả về `failed_agents` khi thực sự có lỗi cần làm lại (nếu video đã tốt >= 80 điểm và mọi cảnh PASS, hãy để `failed_agents: []`).
 Trả về đúng JSON:
 {
   "overall_score": 88,
+  "scene_audit": [
+    {"scene_order": 1, "status": "PASS", "reason": "Khớp lời thoại"}
+  ],
   "checklist": {
     "platform_policy": {"pass": true, "score": 95, "note": "..."},
     "viral_structure": {"pass": true, "score": 88, "note": "..."},
@@ -280,12 +315,26 @@ Trả về đúng JSON:
 }
 PROMPT;
 
+        $disk = Storage::disk('public');
+        $auditImages = [];
+        if ($thumbFullPath && is_file($thumbFullPath)) {
+            $auditImages[] = $thumbFullPath;
+        }
+        foreach ($project->scenes as $s) {
+            if ($s->image_file_path && $disk->exists($s->image_file_path)) {
+                $full = $disk->path($s->image_file_path);
+                if (is_file($full)) {
+                    $auditImages[] = $full;
+                }
+            }
+        }
+
         $userPrompt = <<<USER
 HỒ SƠ VIDEO CẦN KIỂM DUYỆT:
 - Tiêu đề: {$project->title}
 - Giọng đọc đã khóa: {$project->voice_provider} / {$project->voice_id} (Tốc độ: {$project->voice_speed}x)
 - Phụ đề: {$project->subtitle_enabled} (Mẫu: {$project->subtitle_style})
-- Danh sách phân cảnh:
+- Danh sách phân cảnh (đính kèm ảnh bìa + khung hình từng cảnh theo đúng thứ tự):
 {$scenesText}
 
 Hãy chấm điểm công tâm, nghiêm túc như Trưởng phòng kiểm duyệt trước khi đăng TikTok, Fanpage Reels và YouTube Shorts.
@@ -296,8 +345,8 @@ USER;
             userPrompt: $userPrompt,
             actionType: 'agent8_qa_director',
             videoProjectId: $project->id,
-            imagePaths: $thumbFullPath ? [$thumbFullPath] : [],
-            temperature: 0.25
+            imagePaths: $auditImages,
+            temperature: 0.2
         );
     }
 

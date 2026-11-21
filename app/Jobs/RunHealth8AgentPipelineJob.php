@@ -109,19 +109,44 @@ class RunHealth8AgentPipelineJob implements ShouldQueue
                     $failedAgents = array_values(array_unique(array_merge($failedAgents, ['agent7'])));
                 }
 
-                $this->executeSelectedAgents(
-                    project: $project->refresh(),
-                    planItem: $planItem,
-                    targets: $failedAgents,
-                    feedback: $review->feedback_notes,
-                    forceRebuild: true,
-                    agent2: $agent2,
-                    agent3: $agent3,
-                    agent4: $agent4,
-                    agent5: $agent5,
-                    agent6: $agent6,
-                    agent7: $agent7
-                );
+                $failedScenes = data_get($review->checklist_json, 'visual_match.failed_scenes', []);
+
+                // Nếu chỉ có một số cảnh bị FAIL hình ảnh (và không yêu cầu sửa kịch bản/giọng), chỉ thay thế đúng các cảnh đó
+                if (is_array($failedScenes) && $failedScenes !== [] && ! in_array('agent3', $failedAgents, true)) {
+                    $project->update(['status' => ProjectStatus::GENERATING_VISUALS]);
+                    $project = $agent4->huntSpecificScenes($project->refresh(), $failedScenes);
+                    $remainingTargets = array_values(array_diff($failedAgents, ['agent4']));
+                    if (! in_array('agent7', $remainingTargets, true)) {
+                        $remainingTargets[] = 'agent7';
+                    }
+                    $this->executeSelectedAgents(
+                        project: $project,
+                        planItem: $planItem,
+                        targets: $remainingTargets,
+                        feedback: $review->feedback_notes,
+                        forceRebuild: true,
+                        agent2: $agent2,
+                        agent3: $agent3,
+                        agent4: $agent4,
+                        agent5: $agent5,
+                        agent6: $agent6,
+                        agent7: $agent7
+                    );
+                } else {
+                    $this->executeSelectedAgents(
+                        project: $project->refresh(),
+                        planItem: $planItem,
+                        targets: $failedAgents,
+                        feedback: $review->feedback_notes,
+                        forceRebuild: true,
+                        agent2: $agent2,
+                        agent3: $agent3,
+                        agent4: $agent4,
+                        agent5: $agent5,
+                        agent6: $agent6,
+                        agent7: $agent7
+                    );
+                }
 
                 // Kiểm duyệt lại lần 2
                 $agent8->inspectProject($project->refresh());
