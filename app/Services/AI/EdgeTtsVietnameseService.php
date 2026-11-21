@@ -381,9 +381,10 @@ class EdgeTtsVietnameseService
             return;
         }
 
+        $ffmpegBin = (string) config('services.ffmpeg.ffmpeg_binary', 'ffmpeg');
         $tmpOut = $mp3Path . '.tempo.mp3';
         $proc = new Process([
-            $this->ffmpegBinary,
+            $ffmpegBin,
             '-y',
             '-i',
             $mp3Path,
